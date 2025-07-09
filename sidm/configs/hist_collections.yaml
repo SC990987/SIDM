@@ -87,6 +87,11 @@ lj_base: &lj_base
   - "lj_muonN"
   - "lj_dsaMuN"
   - "lj_pfMuN"
+  - "mJJ_2mu2e"
+  - "mJJ_2mu2e_region_A"
+  - "mJJ_2mu2e_region_B"
+  - "mJJ_2mu2e_region_C"
+  - "mJJ_2mu2e_region_D"
 
 mu_lj_base: &mu_lj_base
   - "mu_lj_n"

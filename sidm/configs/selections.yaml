@@ -98,7 +98,6 @@ base: &base
     <<: *base_postLj_obj_cuts
   evt_cuts: &evt_base
     - *evt_baseNoLj
-    - ">=2 LJs"
 
 
 ####################### ABCD Plane ######################
@@ -115,43 +114,6 @@ base: &base
 #                           |                           # 
 #                 iso - cut <= 0.236                    #
 #########################################################
-
-## Region A: dPhi: background, iso: signal
-base_regionA: &base_A
-  <<: *base
-  evt_cuts: &evt_baseA
-    - *evt_baseNoLj
-    - "2mu2e"
-    - 'lj_dPhi_BG'
-    - 'mu_LJ_iso_SR'
-    
-## Region B: dPhi: background, iso: background
-base_regionB: &base_B
-  <<: *base
-  evt_cuts: &evt_baseB
-    - *evt_baseNoLj
-    - "2mu2e"
-    - 'lj_dPhi_BG'
-    - 'mu_LJ_iso_BG'
-
-## Region C: dPhi: signal, iso: background
-base_regionC: &base_C
-  <<: *base
-  evt_cuts: &evt_baseB
-    - *evt_baseNoLj
-    - "2mu2e"
-    - 'lj_dPhi_SR'
-    - 'mu_LJ_iso_BG'
-
-## Region D: dPhi: signal, iso: signal
-base_regionD: &base_D
-  <<: *base
-  evt_cuts: &evt_baseB
-    - *evt_baseNoLj
-    - "2mu2e"
-    - 'lj_dPhi_SR'
-    - 'mu_LJ_iso_SR'
-#########################################################  
 4mu: &4mu
   <<: *base
   evt_cuts: &evt_4mu
