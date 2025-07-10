@@ -29,7 +29,7 @@ counter_defs = {
 }
 
 def make_cut_mask(mu_ljs, egm_ljs, region=''):
-    dphi_thresh = 2.49
+    dphi_thresh = 2.248
     iso_thresh = 0.236
 
     # Step 1: Basic event selection
