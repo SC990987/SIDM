@@ -2,7 +2,6 @@
 
 import awkward as ak
 from sidm.tools.utilities import matched
-
 # define helper functions
 def pid(part, val):
     return part[abs(part.pdgId) == val]
@@ -47,6 +46,16 @@ def withMass(part, mass):
         },
         with_name="PtEtaPhiMLorentzVector",
     )
+def nEnPhoton(lj, n_e, n_photon):
+    noMu = (lj.muon_n == 0)
+    nE = (lj.electron_n == n_e)
+    nP = (lj.photon_n == n_photon)
+
+    return lj[noMu & nE & nP]
+
+
+
+
 
 # define objects whose definitions don't depend on LJs
 preLj_objs = {}
@@ -73,6 +82,8 @@ preLj_objs["genAs_toE"]  = lambda evts: toPid(preLj_objs["genAs"](evts), 11)
 preLj_objs["rho_PFIso"]  = lambda evts: evts.fixedGridRhoFastjetAll
 preLj_objs["jets"]       = lambda evts: evts.Jet
 
+
+
 # define objects whose that will be added to objs by the sidm_processor after LJs are clustered
 # and LJ cuts are applied. postLj_obj cuts can be applied to these
 postLj_objs = {}
@@ -86,6 +97,12 @@ postLj_objs["photon_ljs"]   = lambda objs: noE(objs["egm_ljs"])
 # Adding the following here since I want the cuts on genMus and genEs to be applied
 postLj_objs_MC["genMus_fromA"] = lambda objs: fromPid(objs["genMus"], 32)
 postLj_objs_MC["genEs_fromA"]  = lambda objs: fromPid(objs["genEs"],  32)
+postLj_objs["one_photon_ljs"] = lambda objs: nEnPhoton(objs["ljs"], 0, 1)
+postLj_objs["two_photon_ljs"] = lambda objs: nEnPhoton(objs["ljs"], 0, 2)
+postLj_objs["one_electron_ljs"] = lambda objs: nEnPhoton(objs["ljs"], 1, 0)
+postLj_objs["two_electron_ljs"] = lambda objs: nEnPhoton(objs["ljs"], 2, 0)
+postLj_objs["one_e_one_p_ljs"] = lambda objs: nEnPhoton(objs["ljs"], 1, 1)
+
 
 # define objects that depend on extra parameters determined in hist or cut definitions
 derived_objs = {}
@@ -98,3 +115,13 @@ derived_objs["genAs_matched_muLj"]      = lambda objs, r: matched(objs["genAs"],
 derived_objs["genAs_toMu_matched_muLj"] = lambda objs, r: matched(objs["genAs_toMu"], objs["mu_ljs"], r)
 derived_objs["genAs_matched_egmLj"]     = lambda objs, r: matched(objs["genAs"], objs["egm_ljs"], r)
 derived_objs["genAs_toE_matched_egmLj"] = lambda objs, r: matched(objs["genAs_toE"], objs["egm_ljs"], r)
+derived_objs['genAs_toE_matched_one_photon_ljs'] = lambda objs, r: matched(objs["genAs_toE"], objs["one_photon_ljs"], r)
+derived_objs['genAs_toE_matched_two_photon_ljs'] = lambda objs, r: matched(objs["genAs_toE"], objs["two_photon_ljs"], r)
+derived_objs['genAs_toE_matched_one_electron_ljs'] = lambda objs, r: matched(objs["genAs_toE"], objs["one_electron_ljs"], r)
+derived_objs['genAs_toE_matched_two_electron_ljs'] = lambda objs, r: matched(objs["genAs_toE"], objs["one_electron_ljs"], r)
+derived_objs['genAs_toE_matched_one_e_one_p_ljs'] = lambda objs, r: matched(objs["genAs_toE"], objs["one_e_one_p_ljs"], r)
+derived_objs['genAs_toE_matched_photons'] = lambda objs, r: matched(objs['genAs_toE'], objs['photons'], r)
+derived_objs['genAs_toE_matched_electrons'] = lambda objs, r: matched(objs['genAs_toE'], objs['electrons'], r)
+derived_objs['genA_egmLj_oneEoneP_ptRatio_PS'] = lambda objs: objs["one_e_one_p_ljs"].pt / objs["one_e_one_p_ljs"].nearest(objs["genAs_toE"], threshold=0.4).pt
+
+
