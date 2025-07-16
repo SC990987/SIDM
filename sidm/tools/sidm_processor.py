@@ -395,7 +395,11 @@ class SidmProcessor(processor.ProcessorABC):
             sum_weights = output["metadata"]["scaled_sum_weights"]
             lumixs_weight = utilities.get_lumixs_weight(sample, year, sum_weights)
             for name in output["cutflow"]:
-                accumulator[sample]["cutflow"][name].scale(lumixs_weight)
+                if len(self.lj_reco_choices) > 1:
+                    for key in output['cutflow'][name]:
+                         accumulator[sample]["cutflow"][name][key].scale(lumixs_weight)
+                else:
+                    accumulator[sample]["cutflow"][name].scale(lumixs_weight)
             if not self.unweighted_hist:
                 for name in output["hists"]:
                     accumulator[sample]["hists"][name] *= lumixs_weight
