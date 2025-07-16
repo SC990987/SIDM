@@ -35,7 +35,7 @@ def make_cut_mask(mu_ljs, egm_ljs, region=''):
     # Step 1: Basic event selection
     base_mask = (ak.num(mu_ljs) > 0) & (ak.num(egm_ljs) > 0)
     # Step 2: Calculate deltaPhi and isolation only on valid events
-    delta_phi = abs(mu_ljs[base_mask, 0].phi - egm_ljs[base_mask, 0].phi)
+    delta_phi = abs(mu_ljs[base_mask, 0].delta_phi(egm_ljs[base_mask, 0]))
     isolation = mu_ljs[base_mask, 0].isolation
 
     # Step 3: Region-specific selection
