@@ -87,6 +87,8 @@ base_ljObjCut: &base_ljObjCut
       - "pT > 30 GeV"
       - "|eta| < 2.4"
       - "mu_charge == 0"
+    # mu_ljs: &muljs_base
+    #   - "isolation"
   evt_cuts:
     - *evt_baseNoLj
     
@@ -98,7 +100,10 @@ base: &base
     <<: *base_postLj_obj_cuts
   evt_cuts: &evt_base
     - *evt_baseNoLj
-    - '2mu2e'
+    # - '2mu2e'
+    # - "deltaPhi(muLJ, egmLJ) > 1.5"
+    # - "Leading Mu-LJs Isolation"
+    
 
 
 ####################### ABCD Plane ######################

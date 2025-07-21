@@ -2,6 +2,7 @@
 
 import awkward as ak
 from sidm.tools.utilities import matched
+import numpy as np
 
 # define helper functions
 def pid(part, val):
@@ -65,6 +66,7 @@ postLj_objs["dsamu_ljs"]    = lambda objs: noPf(objs["mu_ljs"])
 postLj_objs["electron_ljs"] = lambda objs: noPhoton(objs["egm_ljs"])
 postLj_objs["photon_ljs"]   = lambda objs: noE(objs["egm_ljs"])
 
+
 # define objects that depend on extra parameters determined in hist or cut definitions
 derived_objs = {}
 derived_objs["n_electron_ljs"] = lambda objs, n: nE(objs["electron_ljs"], n)
@@ -76,3 +78,13 @@ derived_objs["genAs_matched_muLj"]      = lambda objs, r: matched(objs["genAs"],
 derived_objs["genAs_toMu_matched_muLj"] = lambda objs, r: matched(objs["genAs_toMu"], objs["mu_ljs"], r)
 derived_objs["genAs_matched_egmLj"]     = lambda objs, r: matched(objs["genAs"], objs["egm_ljs"], r)
 derived_objs["genAs_toE_matched_egmLj"] = lambda objs, r: matched(objs["genAs_toE"], objs["egm_ljs"], r)
+derived_objs["deltaPhi_mu_egm"] = lambda objs, *_: ak.where(
+    (ak.num(objs["mu_ljs"]) > 0) & (ak.num(objs["egm_ljs"]) > 0),
+    abs(ak.firsts(objs["mu_ljs"]).delta_phi(ak.firsts(objs["egm_ljs"]))),
+    np.nan
+)
+derived_objs["leading_mu_ljs_isolation"] = lambda objs, *_: ak.where(
+    (ak.num(objs["mu_ljs"]) > 0) & (ak.num(objs["egm_ljs"]) > 0),
+    ak.firsts(objs['mu_ljs']).isolation,
+    np.nan
+)

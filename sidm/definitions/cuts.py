@@ -46,6 +46,7 @@ obj_cut_defs = {
         "pfMuLj": lambda objs: (objs["mu_ljs"].pfMu_n > 0) & (objs["mu_ljs"].dsaMu_n == 0),
         "dsaMuLj": lambda objs: (objs["mu_ljs"].pfMu_n == 0) & (objs["mu_ljs"].dsaMu_n > 0),
         "pf_dsa_muLj": lambda objs: (objs["mu_ljs"].pfMu_n > 0) & (objs["mu_ljs"].dsaMu_n > 0),
+        "isolation": lambda objs: (objs['mu_ljs'].isolation <= 0.236),
     },
     "genMus":{
         "pT >= 10 GeV": lambda objs: objs["genMus"].pt >= 10,
@@ -217,9 +218,6 @@ evt_cut_defs = {
     "genMus": lambda objs: ak.num(objs["genMus"]) > 1,
     "dR(Mu_0, Mu_1) > 0.03": lambda objs: objs["genMus"][:,0].delta_r(objs["genMus"][:,1]) > 0.03,
     '2mu2e': lambda objs: (ak.num(objs['ljs'][objs['ljs'].muon_n > 0]) > 0) & (ak.num(objs['ljs'][(objs['ljs'].muon_n == 0)]) > 0),
-    'mu_LJ_iso_SR': lambda objs: objs['mu_ljs'][:,0].isolation <= 0.236,
-    'mu_LJ_iso_BG': lambda objs: objs['mu_ljs'][:,0].isolation > 0.236,
-    'lj_dPhi_SR': lambda objs: abs(objs['mu_ljs'][:, 0].phi - objs['egm_ljs'][:,0].phi) >= 2.49,
-    'lj_dPhi_BG': lambda objs: abs(objs['mu_ljs'][:, 0].phi - objs['egm_ljs'][:,0].phi) < 2.49,
-    
+    "deltaPhi(muLJ, egmLJ) > 1.5": lambda objs: derived_objs["deltaPhi_mu_egm"](objs) >= 2.248,
+    "Leading Mu-LJs Isolation": lambda objs: derived_objs["leading_mu_ljs_isolation"](objs) <= 0.236,
 }
