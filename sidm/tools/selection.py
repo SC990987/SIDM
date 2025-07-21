@@ -30,8 +30,8 @@ class Selection:
                 print("Applying cut:", cut)
             try:
                 self.all_evt_cuts.add(cut, evt_cut_defs[cut](objs))
-            except:
-                print(f"Warning: Unable to evaluate {cut} Skipping.")
+            except Exception as e:
+                print(f"Warning: Unable to evaluate {cut} Skipping. {e}")
 
         # apply event cuts to object collections
         sel_objs = {}
@@ -71,6 +71,6 @@ class JaggedSelection:
                     print(f"Applying {obj} {cut}")
                 try:
                     sel_objs[obj] = sel_objs[obj][obj_cut_defs[obj][cut](sel_objs)]
-                except:
-                    print(f"Warning: Unable to apply {cut} for {obj}. Skipping.")
+                except Exception as e:
+                    print(f"Warning: Unable to apply {cut} for {obj}. Skipping. {e}")
         return sel_objs
