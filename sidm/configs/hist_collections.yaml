@@ -166,7 +166,6 @@ egm_lj_base: &egm_lj_base
   - "egm_lj_electron_min_dxy_XXXXLowRange"
   - "egm_lj_electron_max_dxy_XXXXLowRange"
   - "egm_lj_electron_lostHits"
-  - "genEs_toEgmLJ_pt"
   - "photon_electron_dR_from_oneEonePLJ"
 
 electron_lj_base: &electron_lj_base
