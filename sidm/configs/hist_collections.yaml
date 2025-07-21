@@ -92,6 +92,7 @@ lj_base: &lj_base
   - "mJJ_2mu2e_region_B"
   - "mJJ_2mu2e_region_C"
   - "mJJ_2mu2e_region_D"
+  - 'jet_pt'
 
 mu_lj_base: &mu_lj_base
   - "mu_lj_n"

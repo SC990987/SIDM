@@ -2592,4 +2592,11 @@ hist_defs = {
         ],
         evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region='D'),
     ),
+    "jet_pt": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, 0, 1000.0, name=r"Jet P_{T}",
+                   label=r"Jet P_{T}"),
+                   lambda objs, mask:  objs['jets'][:,0].pt)
+        ],
+    ),
 }
