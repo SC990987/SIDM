@@ -15,6 +15,7 @@ import awkward as ak
 from sidm.tools import histogram as h
 from sidm.tools.utilities import dR, lxy, matched, dxy
 from sidm.definitions.objects import derived_objs
+import numpy as np
 # always reload local modules to pick up changes during development
 importlib.reload(h)
 
@@ -28,35 +29,65 @@ counter_defs = {
     "Matched gen As to electrons": lambda objs: ak.count(derived_objs["genAs_toE_matched_lj"](objs, 0.4).pt),
 }
 
-def make_cut_mask(mu_ljs, egm_ljs, region=''):
-    dphi_thresh = 2.248
-    iso_thresh = 0.236
+def make_cut_mask(mu_ljs, egm_ljs, region_key='TTXXX'):
+    """
+    region_key: a 5-character string: 'T', 'F', or 'X'
+                [delta_phi, mu_iso, egm_iso, egm_min_dxy, mu_min_dxy]
+                'T' = pass cut, 'F' = fail cut, 'X' = don't care
+    """
 
-    # Step 1: Basic event selection
+    # Thresholds
+    delta_phi_thresh = 2.248
+    mu_iso_thresh = 0.236
+    egm_iso_thresh = 1.019
+    egm_min_dxy_thresh = 1.03
+    mu_min_dxy_thresh = 15.85
+
+    # Step 1: Base event selection
     base_mask = (ak.num(mu_ljs) > 0) & (ak.num(egm_ljs) > 0)
-    # Step 2: Calculate deltaPhi and isolation only on valid events
-    delta_phi = abs(mu_ljs[base_mask, 0].delta_phi(egm_ljs[base_mask, 0]))
-    isolation = mu_ljs[base_mask, 0].isolation
+    
+    # Step 2: Extract variables from leading objects
+    mu0 = mu_ljs[base_mask, 0]
+    egm0 = egm_ljs[base_mask, 0]
+    
+    delta_phi = abs(mu0.delta_phi(egm0))
+    mu_iso = mu0.isolation
+    egm_iso = egm0.isolation
+    egm_min_dxy = ak.min(abs(egm0.electrons.dxy), axis=-1)
+    mu_min_dxy = ak.min(abs(mu0.muons.dxy), axis=-1)
+    # egm_min_dxy = ak.fill_none(egm_min_dxy, np.nan)
+    # mu_min_dxy = ak.fill_none(mu_min_dxy, np.nan)
+    # Step 3: Define cuts
+    cut_list = [
+        delta_phi < delta_phi_thresh,
+        mu_iso <= mu_iso_thresh,
+        egm_iso <= egm_iso_thresh,
+        egm_min_dxy <= egm_min_dxy_thresh,
+        mu_min_dxy <= mu_min_dxy_thresh,
+    ]
 
-    # Step 3: Region-specific selection
-    if region == 'A':
-        cut_mask_sub = (delta_phi < dphi_thresh) & (isolation <= iso_thresh)
-    elif region == 'B':
-        cut_mask_sub = (delta_phi < dphi_thresh) & (isolation > iso_thresh)
-    elif region == 'C':
-        cut_mask_sub = (delta_phi >= dphi_thresh) & (isolation > iso_thresh)
-    elif region == 'D':
-        cut_mask_sub = (delta_phi >= dphi_thresh) & (isolation <= iso_thresh)
-    else:
-        raise ValueError(f"Unknown region '{region}'")
+    # Step 4: Apply region logic
+    if len(region_key) != len(cut_list):
+        raise ValueError(f"region_key must be length {len(cut_list)}")
 
-    base_mask = ak.to_numpy(base_mask)
-    cut_mask_sub = ak.to_numpy(cut_mask_sub)
-    full_mask = base_mask.copy()
-    full_mask[base_mask] = cut_mask_sub
-    full_mask = ak.Array(full_mask)
+    region_mask = ak.Array([True] * len(delta_phi))
+    for i, (flag, cut) in enumerate(zip(region_key, cut_list)):
+        if flag == 'T':
+            region_mask = region_mask & cut
+        elif flag == 'F':
+            region_mask = region_mask & (~cut)
+        elif flag == 'X':
+            continue  # Don't apply this cut
+        else:
+            raise ValueError(f"Invalid character '{flag}' in region_key (use 'T', 'F', or 'X')")
 
-    return full_mask
+    # Step 5: Embed back into full mask
+    full_mask = ak.to_numpy(base_mask).copy()
+    region_mask = ak.to_numpy(region_mask)
+    full_mask[base_mask] = region_mask
+
+    return ak.Array(full_mask)
+
 
 
 # define default labels and binnings
@@ -2565,7 +2596,7 @@ hist_defs = {
                    label=r"$M_{jj}$ [GeV]"),
                    lambda objs, mask: (objs["egm_ljs"][mask, 0] + objs["mu_ljs"][mask, 0]).mass)
         ],
-        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region='A'),
+        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='FTXXX'),
          
     ),
     "mJJ_2mu2e_region_B": h.Histogram(
@@ -2574,7 +2605,7 @@ hist_defs = {
                    label=r"$M_{jj}$ [GeV]"),
                    lambda objs, mask:  (objs["egm_ljs"][mask, 0] + objs["mu_ljs"][mask, 0]).mass)
         ],
-        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region='B'),
+        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='FFXXX'),
     ),
     "mJJ_2mu2e_region_C": h.Histogram(
         [
@@ -2582,7 +2613,7 @@ hist_defs = {
                    label=r"$M_{jj}$ [GeV]"),
                    lambda objs, mask:  (objs["egm_ljs"][mask, 0] + objs["mu_ljs"][mask, 0]).mass)
         ],
-        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region='C'),
+        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='TFXXX'),
     ),
     "mJJ_2mu2e_region_D": h.Histogram(
         [
@@ -2590,7 +2621,7 @@ hist_defs = {
                    label=r"$M_{jj}$ [GeV]"),
                    lambda objs, mask:  (objs["egm_ljs"][mask, 0] + objs["mu_ljs"][mask, 0]).mass)
         ],
-        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region='D'),
+        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='TTXXX'),
     ),
     "jet_pt": h.Histogram(
         [
@@ -2598,5 +2629,45 @@ hist_defs = {
                    label=r"Jet P_{T}"),
                    lambda objs, mask:  objs['jets'][:,0].pt)
         ],
+    ),
+    "mJJ_2mu2e_deltaPhi": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, 0, 1400.0, name=r"M_{jj}",
+                   label=r"$M_{jj}$ [GeV]"),
+                   lambda objs, mask:  (objs["egm_ljs"][mask, 0] + objs["mu_ljs"][mask, 0]).mass)
+        ],
+        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='TXXXX'),
+    ),
+    "mJJ_2mu2e_muLJIso": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, 0, 1400.0, name=r"M_{jj}",
+                   label=r"$M_{jj}$ [GeV]"),
+                   lambda objs, mask:  (objs["egm_ljs"][mask, 0] + objs["mu_ljs"][mask, 0]).mass)
+        ],
+        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='XTXXX'),
+    ),
+    "mJJ_2mu2e_egmLJIso": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, 0, 1400.0, name=r"M_{jj}",
+                   label=r"$M_{jj}$ [GeV]"),
+                   lambda objs, mask:  (objs["egm_ljs"][mask, 0] + objs["mu_ljs"][mask, 0]).mass)
+        ],
+        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='XXTXX'),
+    ),
+    "mJJ_2mu2e_egmLJDxy": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, 0, 1400.0, name=r"M_{jj}",
+                   label=r"$M_{jj}$ [GeV]"),
+                   lambda objs, mask:  (objs["egm_ljs"][mask, 0] + objs["mu_ljs"][mask, 0]).mass)
+        ],
+        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='XXXTX'),
+    ),
+    "mJJ_2mu2e_muLJDxy": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, 0, 1400.0, name=r"M_{jj}",
+                   label=r"$M_{jj}$ [GeV]"),
+                   lambda objs, mask:  (objs["egm_ljs"][mask, 0] + objs["mu_ljs"][mask, 0]).mass)
+        ],
+        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='XXXXT'),
     ),
 }
