@@ -97,7 +97,7 @@ lj_base: &lj_base
   - "mJJ_2mu2e_egmLJIso"
   - "mJJ_2mu2e_egmLJDxy"
   - "mJJ_2mu2e_muLJDxy"
-  - 'jet_pt'
+  # - 'jet_pt'
 
 mu_lj_base: &mu_lj_base
   - "mu_lj_n"
