@@ -59,7 +59,7 @@ def make_cut_mask(mu_ljs, egm_ljs, region_key='TTXXX'):
     # mu_min_dxy = ak.fill_none(mu_min_dxy, np.nan)
     # Step 3: Define cuts
     cut_list = [
-        delta_phi < delta_phi_thresh,
+        delta_phi >= delta_phi_thresh,
         mu_iso <= mu_iso_thresh,
         egm_iso <= egm_iso_thresh,
         egm_min_dxy <= egm_min_dxy_thresh,
