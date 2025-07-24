@@ -2670,4 +2670,12 @@ hist_defs = {
         ],
         evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='XXXXT'),
     ),
+    "mJJ_2mu2e_allCuts": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, 0, 1400.0, name=r"M_{jj}",
+                   label=r"$M_{jj}$ [GeV]"),
+                   lambda objs, mask:  (objs["egm_ljs"][mask, 0] + objs["mu_ljs"][mask, 0]).mass)
+        ],
+        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='TTTTT'),
+    ),
 }
