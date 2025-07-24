@@ -55,8 +55,8 @@ def make_cut_mask(mu_ljs, egm_ljs, region_key='TTXXX'):
     egm_iso = egm0.isolation
     egm_min_dxy = ak.min(abs(egm0.electrons.dxy), axis=-1)
     mu_min_dxy = ak.min(abs(mu0.muons.dxy), axis=-1)
-    # egm_min_dxy = ak.fill_none(egm_min_dxy, np.nan)
-    # mu_min_dxy = ak.fill_none(mu_min_dxy, np.nan)
+    egm_min_dxy = ak.fill_none(egm_min_dxy, np.nan)
+    mu_min_dxy = ak.fill_none(mu_min_dxy, np.nan)
     # Step 3: Define cuts
     cut_list = [
         delta_phi >= delta_phi_thresh,
@@ -85,7 +85,6 @@ def make_cut_mask(mu_ljs, egm_ljs, region_key='TTXXX'):
     full_mask = ak.to_numpy(base_mask).copy()
     region_mask = ak.to_numpy(region_mask)
     full_mask[base_mask] = region_mask
-
     return ak.Array(full_mask)
 
 
@@ -2674,8 +2673,9 @@ hist_defs = {
         [
             h.Axis(hist.axis.Regular(50, 0, 1400.0, name=r"M_{jj}",
                    label=r"$M_{jj}$ [GeV]"),
+                   #lambda objs, mask:  (ak.firsts(objs["egm_ljs"][mask]) + ak.firsts(objs["mu_ljs"][mask])).mass)
                    lambda objs, mask:  (objs["egm_ljs"][mask, 0] + objs["mu_ljs"][mask, 0]).mass)
         ],
-        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='TTTTT'),
+        evt_mask=lambda objs: make_cut_mask(objs['mu_ljs'], objs['egm_ljs'], region_key='TTTTX'),
     ),
 }
