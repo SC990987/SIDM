@@ -40,8 +40,8 @@ def make_cut_mask(mu_ljs, egm_ljs, region_key='TTXXX'):
     delta_phi_thresh = 2.248
     mu_iso_thresh = 0.236
     egm_iso_thresh = 1.019
-    egm_min_dxy_thresh = 1.03
-    mu_min_dxy_thresh = 15.85
+    egm_min_dxy_thresh = 0.00014
+    mu_min_dxy_thresh = 3.29e-05
 
     # Step 1: Base event selection
     base_mask = (ak.num(mu_ljs) > 0) & (ak.num(egm_ljs) > 0)
@@ -62,8 +62,8 @@ def make_cut_mask(mu_ljs, egm_ljs, region_key='TTXXX'):
         delta_phi >= delta_phi_thresh,
         mu_iso <= mu_iso_thresh,
         egm_iso <= egm_iso_thresh,
-        egm_min_dxy <= egm_min_dxy_thresh,
-        mu_min_dxy <= mu_min_dxy_thresh,
+        egm_min_dxy >= egm_min_dxy_thresh,
+        mu_min_dxy >= mu_min_dxy_thresh,
     ]
 
     # Step 4: Apply region logic
