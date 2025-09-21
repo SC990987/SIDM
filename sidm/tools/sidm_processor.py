@@ -193,17 +193,15 @@ class SidmProcessor(processor.ProcessorABC):
         }
         # Optionally return the full selected objects for inspection
         if self.debug:
+        
             out["debug"] = {
-                "events": [events],
-                "objects": [sel_objs],
-                "mu_lj_iso": ak.to_list(sel_objs['mu_ljs'][:,0].isolation),
-                "egm_lj_iso": ak.to_list(sel_objs['egm_ljs'][:,0].isolation),
-                'gen_weights': ak.to_list(events.Generator.weight),
-                'dPhi': ak.to_list(abs(sel_objs['mu_ljs'][:,0].delta_phi(sel_objs['egm_ljs'][:,0]))),
-                'dsaMu_n': ak.to_list(ak.flatten(sel_objs['mu_ljs'].dsaMu_n)),
-                'mu_lj_min_dxy': ak.to_list(ak.min(abs(sel_objs['mu_ljs'][:, 0].muons.dxy), axis=-1)),
-                'mu_lj_max_dxy': ak.to_list(ak.max(abs(sel_objs['mu_ljs'][:, 0].muons.dxy), axis=-1)),
-                
+                "mu_lj_iso": ak.to_list(sel_objs["mu_ljs"][:, 0].isolation),
+                "egm_lj_iso": ak.to_list(sel_objs["egm_ljs"][:, 0].isolation),
+                "gen_weights": ak.to_list(events.Generator.weight),
+                "dPhi": ak.to_list(abs(sel_objs["mu_ljs"][:, 0].delta_phi(sel_objs["egm_ljs"][:, 0]))),
+                "dsaMu_n": ak.to_list(ak.flatten(sel_objs["mu_ljs"].dsaMu_n)),
+                "mu_lj_min_dxy": ak.to_list(ak.min(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
+                "mu_lj_max_dxy": ak.to_list(ak.max(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
             }
         return {events.metadata["dataset"]: out}
 
