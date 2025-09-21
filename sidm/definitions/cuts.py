@@ -199,8 +199,9 @@ evt_cut_defs = {
     # 4mu: leading two LJs are both mu-type
     "4mu": lambda objs: ak.count_nonzero(objs["ljs"][:, :2].muon_n >= 2, axis=-1) == 2,
     # 2mu2e: leading two LJs contain exactly 1 mu-type and exactly 1 egm-type
-    "2mu2e": lambda objs: ((ak.count_nonzero(objs["ljs"][:, :2].muon_n >= 2, axis=-1) == 1)
-                           & (ak.count_nonzero(objs["ljs"][:, :2].muon_n == 0, axis=-1) == 1)),
+    # "2mu2e": lambda objs: ((ak.count_nonzero(objs["ljs"][:, :2].muon_n >= 2, axis=-1) == 1)
+    #                        & (ak.count_nonzero(objs["ljs"][:, :2].muon_n == 0, axis=-1) == 1)),
+    "2mu2e": lambda objs: (ak.sum(objs["ljs"].muon_n > 0, axis=1) > 0) & (ak.sum(objs["ljs"].muon_n == 0, axis=1) > 0),
     "genAs_toE_matched_egmLj": lambda objs: ak.num(derived_objs["genAs_toE_matched_egmLj"](objs, 0.4)) >= 1,
     "genAs_toMu_matched_muLj": lambda objs: ak.num(derived_objs["genAs_toMu_matched_muLj"](objs, 0.4)) >= 1,
     "genAs_toE": lambda objs: ak.num(objs["genAs_toE"]) >= 1,
@@ -209,4 +210,17 @@ evt_cut_defs = {
     "50 GeV <= GenMu0_pT <= 60 GeV": lambda objs : (objs["genMus"][:, 0].pt >=50) & (objs["genMus"][:, 0].pt <=60),
     "genMus": lambda objs: ak.num(objs["genMus"]) > 1,
     "dR(Mu_0, Mu_1) > 0.03": lambda objs: objs["genMus"][:,0].delta_r(objs["genMus"][:,1]) > 0.03,
+}
+
+preLj_obj_cut_defs = {
+    "dsaMuons": { 
+        "segmatch veto": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+        "segmatch veto + charge": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (objs["dsaMuons"].charge[:,:,None] != objs["dsaMuons"].good_matched_muons.charge) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+        "segmatch veto + dR outer": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (dR_outer(objs["dsaMuons"][:,:,None], objs["dsaMuons"].good_matched_muons) > 0.1) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+        "segmatch veto + num seg": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (objs["dsaMuons"].good_matched_muons.numMatch/(objs["dsaMuons"].nSegments[:,:,None]) < 0.34) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+        "segmatch veto + dR outer + num seg": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (dR_outer(objs["dsaMuons"][:,:,None], objs["dsaMuons"].good_matched_muons) > 0.1) |
+                                    (objs["dsaMuons"].good_matched_muons.numMatch/(objs["dsaMuons"].nSegments[:,:,None]) < 0.34) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+        "all": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (objs["dsaMuons"].charge[:,:,None] != objs["dsaMuons"].good_matched_muons.charge) | (dR_outer(objs["dsaMuons"][:,:,None], objs["dsaMuons"].good_matched_muons) > 0.1) |
+                                    (objs["dsaMuons"].good_matched_muons.numMatch/(objs["dsaMuons"].nSegments[:,:,None]) < 0.34) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+    },
 }

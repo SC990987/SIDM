@@ -15,6 +15,26 @@ from sidm import BASE_DIR
 from sidm.tools import selection, cutflow, utilities
 from sidm.definitions.hists import hist_defs, counter_defs
 from sidm.definitions.objects import preLj_objs, postLj_objs
+import coffea.nanoevents.transforms as tr
+import awkward as ak
+
+
+def _patched_local2global(stack):
+    """
+    Original: index,target_offsets,!local2global
+    Turn jagged local index into global index
+    """
+    target_offsets = ak.Array(stack.pop())
+    index = ak.Array(stack.pop())
+    index = index.mask[index >= 0] + target_offsets[:-1]
+    index = index.mask[index < target_offsets[1:]]
+
+    out = ak.flatten(ak.fill_none(index, -1), axis=None)
+    out = ak.values_astype(out, np.int64)
+
+    stack.append(out)
+tr.local2global = _patched_local2global
+
 
 class SidmProcessor(processor.ProcessorABC):
     """Class to apply selections, make histograms, and make cutflows
@@ -34,6 +54,7 @@ class SidmProcessor(processor.ProcessorABC):
         histograms_cfg="configs/hist_collections.yaml",
         unweighted_hist=False,
         verbose=False,
+        debug = False,
     ):
         self.channel_names = channel_names
         self.hist_collection_names = hist_collection_names
@@ -44,6 +65,7 @@ class SidmProcessor(processor.ProcessorABC):
         self.obj_defs = preLj_objs
         self.verbose = verbose
         self.year = "2018" # fixme: may be better to store as event metadata
+        self.debug = debug
 
     def process(self, events):
         """Apply selections, make histograms and cutflow"""
@@ -95,12 +117,14 @@ class SidmProcessor(processor.ProcessorABC):
                 # apply pre-LJ object selection
                 sel_objs = obj_selection.apply_obj_cuts(objs)
 
-                # apply selections on matched_muons within the DSA muons and matched_dsa_muons within the PF muons
                 try:
                     sel_objs["dsaMuons"]["good_matched_muons"] = nested_selection.apply_obj_cuts(sel_objs, sel_objs["dsaMuons"].matched_muons, "muons" )
                     sel_objs["muons"]["good_matched_dsa_muons"] = nested_selection.apply_obj_cuts(sel_objs, sel_objs["muons"].matched_dsa_muons,"dsaMuons")
                 except Exception as e:
-                    print(f"Failed to apply selections to the nested matched muon collections. Error message: {e}")
+                    print(">>> ENTERED EXCEPT BLOCK <<<")  # <-- hardcoded message
+                    print("Error object:", e)
+                    import traceback
+                    traceback.print_exc()
                     
                 # apply selections to muons which already contains good matched information
                 prelj_selection = selection.JaggedSelection(cuts["preLj_obj"], self.verbose)
@@ -167,7 +191,20 @@ class SidmProcessor(processor.ProcessorABC):
                 "n_evts": events.metadata["entrystop"] - events.metadata["entrystart"],
             },
         }
-
+        # Optionally return the full selected objects for inspection
+        if self.debug:
+            out["debug"] = {
+                "events": [events],
+                "objects": [sel_objs],
+                "mu_lj_iso": ak.to_list(sel_objs['mu_ljs'][:,0].isolation),
+                "egm_lj_iso": ak.to_list(sel_objs['egm_ljs'][:,0].isolation),
+                'gen_weights': ak.to_list(events.Generator.weight),
+                'dPhi': ak.to_list(abs(sel_objs['mu_ljs'][:,0].delta_phi(sel_objs['egm_ljs'][:,0]))),
+                'dsaMu_n': ak.to_list(ak.flatten(sel_objs['mu_ljs'].dsaMu_n)),
+                'mu_lj_min_dxy': ak.to_list(ak.min(abs(sel_objs['mu_ljs'][:, 0].muons.dxy), axis=-1)),
+                'mu_lj_max_dxy': ak.to_list(ak.max(abs(sel_objs['mu_ljs'][:, 0].muons.dxy), axis=-1)),
+                
+            }
         return {events.metadata["dataset"]: out}
 
     def make_vector(self, objs, collection, fields, type_id=None, mass=None):
@@ -196,6 +233,7 @@ class SidmProcessor(processor.ProcessorABC):
         unsafe_fields = ['muonIdxG','dsaIdxG','good_matched_muons','good_matched_dsa_muons']
         
         all_fields = list(set().union(*fields))
+        
         for field in unsafe_fields:
             all_fields.remove(field)
         
