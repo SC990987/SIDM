@@ -202,6 +202,7 @@ class SidmProcessor(processor.ProcessorABC):
                 "dsaMu_n": ak.to_list(ak.flatten(sel_objs["mu_ljs"].dsaMu_n)),
                 "mu_lj_min_dxy": ak.to_list(ak.min(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
                 "mu_lj_max_dxy": ak.to_list(ak.max(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
+                "mJJ": ak.to_list((sel_objs["mu_ljs"][:,0] + sel_objs["egm_ljs"][:,0]).mass),
             }
         return {events.metadata["dataset"]: out}
 
