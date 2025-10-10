@@ -431,11 +431,11 @@ class SidmProcessor(processor.ProcessorABC):
     def postprocess(self, accumulator):
         """Modify accumulator after process has run on all chunks"""
         # scale cutflow and hists according to lumi*xs
-        for sample, output in accumulator.items():
-            n_evts = output["metadata"]["n_evts"]
-            lumixs_weight = utilities.get_lumixs_weight(sample, self.year, n_evts)
-            for name in output["cutflow"]:
-                accumulator[sample]["cutflow"][name].scale(lumixs_weight)
-            if not self.unweighted_hist:
-                for name in output["hists"]:
-                    accumulator[sample]["hists"][name] *= lumixs_weight
+        # for sample, output in accumulator.items():
+        #     n_evts = output["metadata"]["n_evts"]
+        #     lumixs_weight = utilities.get_lumixs_weight(sample, self.year, n_evts)
+        #     for name in output["cutflow"]:
+        #         accumulator[sample]["cutflow"][name].scale(lumixs_weight)
+        #     if not self.unweighted_hist:
+        #         for name in output["hists"]:
+        #             accumulator[sample]["hists"][name] *= lumixs_weight
