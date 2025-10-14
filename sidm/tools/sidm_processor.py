@@ -17,24 +17,7 @@ from sidm.definitions.hists import hist_defs, counter_defs
 from sidm.definitions.objects import preLj_objs, postLj_objs
 import coffea.nanoevents.transforms as tr
 import awkward as ak
-import lzma
-import logging
 
-# Configure logger
-logger = logging.getLogger("sidm_logger")
-logger.setLevel(logging.INFO)
-
-# File and console handler
-log_file = "sidm_processor.log"
-file_handler = logging.FileHandler(log_file)
-console_handler = logging.StreamHandler()
-
-formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
-file_handler.setFormatter(formatter)
-console_handler.setFormatter(formatter)
-
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
 
 def _patched_local2global(stack):
     """
@@ -88,176 +71,140 @@ class SidmProcessor(processor.ProcessorABC):
         """Apply selections, make histograms and cutflow"""
         # create object collections
         # fixme: only include objs used in cuts or hists
-        try:
-            # 👇 Add file info for context in logs (if available)
-            file_path = events.behavior.get('__file_path__', 'Unknown file')
-            objs = {}
-            for obj_name, obj_def in self.obj_defs.items():
+        objs = {}
+        for obj_name, obj_def in self.obj_defs.items():
+            try:
+                obj = obj_def(events)
+            except AttributeError:
+                print(f"Warning: {obj_name} not found in this sample. Skipping.")
+                continue
+            objs[obj_name] = obj
+
+            # pt order
+            objs[obj_name] = self.order(objs[obj_name])
+
+
+            # add lxy attribute to particles with children
+            if hasattr(obj, "children"):
+                objs[obj_name]["lxy"] = utilities.lxy(objs[obj_name])
+
+            # add dxy wrt beamspot for all objs that don't already have it
+            if hasattr(obj, "vx") and not hasattr(obj, "dxy") and "bs" in objs:
+                objs[obj_name]["dxy"] = utilities.dxy(objs[obj_name], ref=objs["bs"])
+
+            # add dimension to one-per-event objects to allow independent obj and evt cuts
+            # skip objects with no fields
+            if objs[obj_name].ndim == 1 and "x" in obj.fields:
+                counts = ak.ones_like(objs[obj_name].x, dtype=np.int32)
+                objs[obj_name] = ak.unflatten(objs[obj_name], counts)
+
+        
+        cutflows = {}
+        counters = {}
+
+        # define histograms
+        hists = self.build_histograms()
+
+        ### define pre-lj object, lj, post-lj obj, and event cuts per channel
+        ch_cuts = self.build_cuts()
+
+        # loop through lj reco choices and channels, treating each lj+channel pair as a unique Selection
+        for channel, cuts in ch_cuts.items():
+            obj_selection = selection.JaggedSelection(cuts["obj"], self.verbose)
+            nested_selection = selection.NestedSelection(cuts["obj"], self.verbose)
+
+            for lj_reco in self.lj_reco_choices:
+                # apply pre-LJ object selection
+                sel_objs = obj_selection.apply_obj_cuts(objs)
+
                 try:
-                    obj = obj_def(events)
-                except AttributeError:
-                    print(f"Warning: {obj_name} not found in this sample. Skipping.")
-                    continue
-                objs[obj_name] = obj
-    
-                # pt order
-                objs[obj_name] = self.order(objs[obj_name])
-    
-    
-                # add lxy attribute to particles with children
-                if hasattr(obj, "children"):
-                    objs[obj_name]["lxy"] = utilities.lxy(objs[obj_name])
-    
-                # add dxy wrt beamspot for all objs that don't already have it
-                if hasattr(obj, "vx") and not hasattr(obj, "dxy") and "bs" in objs:
-                    objs[obj_name]["dxy"] = utilities.dxy(objs[obj_name], ref=objs["bs"])
-    
-                # add dimension to one-per-event objects to allow independent obj and evt cuts
-                # skip objects with no fields
-                if objs[obj_name].ndim == 1 and "x" in obj.fields:
-                    counts = ak.ones_like(objs[obj_name].x, dtype=np.int32)
-                    objs[obj_name] = ak.unflatten(objs[obj_name], counts)
-    
-            
-            cutflows = {}
-            counters = {}
-    
-            # define histograms
-            hists = self.build_histograms()
-    
-            ### define pre-lj object, lj, post-lj obj, and event cuts per channel
-            ch_cuts = self.build_cuts()
-    
-            # loop through lj reco choices and channels, treating each lj+channel pair as a unique Selection
-            for channel, cuts in ch_cuts.items():
-                obj_selection = selection.JaggedSelection(cuts["obj"], self.verbose)
-                nested_selection = selection.NestedSelection(cuts["obj"], self.verbose)
-    
-                for lj_reco in self.lj_reco_choices:
-                    # apply pre-LJ object selection
-                    sel_objs = obj_selection.apply_obj_cuts(objs)
-    
-                    try:
-                        sel_objs["dsaMuons"]["good_matched_muons"] = nested_selection.apply_obj_cuts(sel_objs, sel_objs["dsaMuons"].matched_muons, "muons" )
-                        sel_objs["muons"]["good_matched_dsa_muons"] = nested_selection.apply_obj_cuts(sel_objs, sel_objs["muons"].matched_dsa_muons,"dsaMuons")
-                    except Exception as e:
-                        print(">>> ENTERED EXCEPT BLOCK <<<")  # <-- hardcoded message
-                        print("Error object:", e)
-                        import traceback
-                        traceback.print_exc()
-                        
-                    # apply selections to muons which already contains good matched information
-                    prelj_selection = selection.JaggedSelection(cuts["preLj_obj"], self.verbose)
-                    sel_objs = prelj_selection.apply_obj_cuts_preLj(sel_objs)
+                    sel_objs["dsaMuons"]["good_matched_muons"] = nested_selection.apply_obj_cuts(sel_objs, sel_objs["dsaMuons"].matched_muons, "muons" )
+                    sel_objs["muons"]["good_matched_dsa_muons"] = nested_selection.apply_obj_cuts(sel_objs, sel_objs["muons"].matched_dsa_muons,"dsaMuons")
+                except Exception as e:
+                    print(">>> ENTERED EXCEPT BLOCK <<<")  # <-- hardcoded message
+                    print("Error object:", e)
+                    import traceback
+                    traceback.print_exc()
                     
-                    # reconstruct lepton jets
-                    sel_objs["ljs"] = self.build_lepton_jets(sel_objs, float(lj_reco))
-    
-                    # apply obj selection to ljs
-                    lj_selection = selection.JaggedSelection(cuts["lj"], self.verbose)
-                    sel_objs = lj_selection.apply_obj_cuts(sel_objs)
-    
-                    # add post-lj objects to sel_objs
-                    for obj in postLj_objs:
-                        sel_objs[obj] = postLj_objs[obj](sel_objs)
-    
-                    # apply post-lj obj selection
-                    postLj_selection = selection.JaggedSelection(cuts["postLj_obj"], self.verbose)
-                    sel_objs = postLj_selection.apply_obj_cuts(sel_objs)
-    
-                    # build Selection objects and apply event selection
-                    evt_selection = selection.Selection(cuts["evt"], self.verbose)
-                    sel_objs = evt_selection.apply_evt_cuts(sel_objs)
-    
-                    # fill all hists
-                    sel_objs["ch"] = channel
-                    sel_objs["lj_reco"] = lj_reco
-    
-                    # define event weights
-                    evt_weights =  self.obj_defs["weight"](events)*events.metadata["skim_factor"]
-    
-                    # make cutflow
-                    if lj_reco not in cutflows:
-                        cutflows[str(lj_reco)] = {}
-                    cutflows[str(lj_reco)][channel] = cutflow.Cutflow(evt_selection.all_evt_cuts, evt_selection.evt_cuts, evt_weights)
-    
-                    # fill histograms for this channel+lj_reco pair
-                    hist_weights = evt_weights[evt_selection.all_evt_cuts.all(*evt_selection.evt_cuts)]
-                    if self.unweighted_hist:
-                        hist_weights =  ak.ones_like(hist_weights)
-                    for h in hists.values():
-                        h.fill(sel_objs, hist_weights)
-    
-                    # Fill counters
-                    if lj_reco not in counters:
-                        counters[lj_reco] = {}
-                    counters[lj_reco][channel] = {}
-    
-                    for name, counter in counter_defs.items():
-                        try:
-                            counters[lj_reco][channel][name] = counter(sel_objs)
-                        except (KeyError, AttributeError) as e:
-                            print(f"Warning: cannot fill counter {name}. Skipping.")
-    
-            # lose lj_reco dimension to cutflows if only one reco was run
-            if len(self.lj_reco_choices) == 1:
-                cutflows = cutflows[self.lj_reco_choices[0]]
-    
-            out = {
-                # "cutflow": cutflows,
-                # "hists": {n: h.hist for n, h in hists.items()}, # output hist.Hists, not Histograms
-                # "counters": counters,
-                # "metadata": {
-                #     "n_evts": events.metadata["entrystop"] - events.metadata["entrystart"],
-                # },
+                # apply selections to muons which already contains good matched information
+                prelj_selection = selection.JaggedSelection(cuts["preLj_obj"], self.verbose)
+                sel_objs = prelj_selection.apply_obj_cuts_preLj(sel_objs)
+                
+                # reconstruct lepton jets
+                sel_objs["ljs"] = self.build_lepton_jets(sel_objs, float(lj_reco))
+
+                # apply obj selection to ljs
+                lj_selection = selection.JaggedSelection(cuts["lj"], self.verbose)
+                sel_objs = lj_selection.apply_obj_cuts(sel_objs)
+
+                # add post-lj objects to sel_objs
+                for obj in postLj_objs:
+                    sel_objs[obj] = postLj_objs[obj](sel_objs)
+
+                # apply post-lj obj selection
+                postLj_selection = selection.JaggedSelection(cuts["postLj_obj"], self.verbose)
+                sel_objs = postLj_selection.apply_obj_cuts(sel_objs)
+
+                # build Selection objects and apply event selection
+                evt_selection = selection.Selection(cuts["evt"], self.verbose)
+                sel_objs = evt_selection.apply_evt_cuts(sel_objs)
+
+                # fill all hists
+                sel_objs["ch"] = channel
+                sel_objs["lj_reco"] = lj_reco
+
+                # define event weights
+                evt_weights =  self.obj_defs["weight"](events)*events.metadata["skim_factor"]
+
+                # make cutflow
+                if lj_reco not in cutflows:
+                    cutflows[str(lj_reco)] = {}
+                cutflows[str(lj_reco)][channel] = cutflow.Cutflow(evt_selection.all_evt_cuts, evt_selection.evt_cuts, evt_weights)
+
+                # fill histograms for this channel+lj_reco pair
+                hist_weights = evt_weights[evt_selection.all_evt_cuts.all(*evt_selection.evt_cuts)]
+                if self.unweighted_hist:
+                    hist_weights =  ak.ones_like(hist_weights)
+                for h in hists.values():
+                    h.fill(sel_objs, hist_weights)
+
+                # Fill counters
+                if lj_reco not in counters:
+                    counters[lj_reco] = {}
+                counters[lj_reco][channel] = {}
+
+                for name, counter in counter_defs.items():
+                    try:
+                        counters[lj_reco][channel][name] = counter(sel_objs)
+                    except (KeyError, AttributeError) as e:
+                        print(f"Warning: cannot fill counter {name}. Skipping.")
+
+        # lose lj_reco dimension to cutflows if only one reco was run
+        if len(self.lj_reco_choices) == 1:
+            cutflows = cutflows[self.lj_reco_choices[0]]
+
+        out = {
+            "cutflow": cutflows,
+            "hists": {n: h.hist for n, h in hists.items()}, # output hist.Hists, not Histograms
+            "counters": counters,
+            "metadata": {
+                "n_evts": events.metadata["entrystop"] - events.metadata["entrystart"],
+            },
+        }
+        # Optionally return the full selected objects for inspection
+        if self.debug:
+        
+            out["debug"] = {
+                "mu_lj_iso": ak.to_list(sel_objs["mu_ljs"][:, 0].isolation),
+                "egm_lj_iso": ak.to_list(sel_objs["egm_ljs"][:, 0].isolation),
+                "gen_weights": ak.to_list(events.Generator.weight),
+                "dPhi": ak.to_list(abs(sel_objs["mu_ljs"][:, 0].delta_phi(sel_objs["egm_ljs"][:, 0]))),
+                "dsaMu_n": ak.to_list((sel_objs["mu_ljs"][:,0].dsaMu_n)),
+                "mu_lj_min_dxy": ak.to_list(ak.min(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
+                "mu_lj_max_dxy": ak.to_list(ak.max(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
+                "mJJ": ak.to_list((sel_objs["mu_ljs"][:,0] + sel_objs["egm_ljs"][:,0]).mass),
             }
-            # Optionally return the full selected objects for inspection
-            if self.debug:
-            
-                out["debug"] = {
-                    "mu_lj_iso": ak.to_list(sel_objs["mu_ljs"][:, 0].isolation),
-                    "egm_lj_iso": ak.to_list(sel_objs["egm_ljs"][:, 0].isolation),
-                    "gen_weights": ak.to_list(events.Generator.weight),
-                    "dPhi": ak.to_list(abs(sel_objs["mu_ljs"][:, 0].delta_phi(sel_objs["egm_ljs"][:, 0]))),
-                    "dsaMu_n": ak.to_list((sel_objs["mu_ljs"][:,0].dsaMu_n)),
-                    "mu_lj_min_dxy": ak.to_list(ak.min(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
-                    "mu_lj_max_dxy": ak.to_list(ak.max(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
-                    "mJJ": ak.to_list((sel_objs["mu_ljs"][:,0] + sel_objs["egm_ljs"][:,0]).mass),
-                }
-            return {events.metadata["dataset"]: {"out": out}}
-            
-        except (lzma.LZMAError, getattr(lzma, "DecompressionError", lzma.LZMAError)) as e:
-            out = {
-                "debug": {
-                    "mu_lj_iso": [],
-                    "egm_lj_iso": [],
-                    "gen_weights": [],
-                    "dPhi": [],
-                    "dsaMu_n": [],
-                    "mu_lj_min_dxy":[],
-                    "mu_lj_max_dxy":[],
-                    "mJJ": [],
-                }
-            }
-            logger.error(f"LZMA decompression failed for file: {file_path}")
-            logger.error(f"Exception: {e}")
-            return {events.metadata["dataset"]: {"out": out}}
-    
-        except Exception as e:
-            out = {
-                "debug": {
-                    "mu_lj_iso": [],
-                    "egm_lj_iso": [],
-                    "gen_weights": [],
-                    "dPhi": [],
-                    "dsaMu_n": [],
-                    "mu_lj_min_dxy":[],
-                    "mu_lj_max_dxy":[],
-                    "mJJ": [],
-                }
-            }
-            logger.exception(f"Unexpected error while processing file: {file_path}")
-            return {events.metadata["dataset"]: {"out": out}}
+        return {events.metadata["dataset"]: out}
 
     def make_vector(self, objs, collection, fields, type_id=None, mass=None):
         shape = ak.ones_like(objs[collection].pt, dtype=np.dtype(int))
