@@ -204,12 +204,12 @@ class SidmProcessor(processor.ProcessorABC):
                 cutflows = cutflows[self.lj_reco_choices[0]]
     
             out = {
-                "cutflow": cutflows,
-                "hists": {n: h.hist for n, h in hists.items()}, # output hist.Hists, not Histograms
-                "counters": counters,
-                "metadata": {
-                    "n_evts": events.metadata["entrystop"] - events.metadata["entrystart"],
-                },
+                # "cutflow": cutflows,
+                # "hists": {n: h.hist for n, h in hists.items()}, # output hist.Hists, not Histograms
+                # "counters": counters,
+                # "metadata": {
+                #     "n_evts": events.metadata["entrystop"] - events.metadata["entrystart"],
+                # },
             }
             # Optionally return the full selected objects for inspection
             if self.debug:
@@ -224,16 +224,40 @@ class SidmProcessor(processor.ProcessorABC):
                     "mu_lj_max_dxy": ak.to_list(ak.max(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
                     "mJJ": ak.to_list((sel_objs["mu_ljs"][:,0] + sel_objs["egm_ljs"][:,0]).mass),
                 }
-            return {events.metadata["dataset"]: {"out": None}}
+            return {events.metadata["dataset"]: {"out": out}}
             
         except (lzma.LZMAError, getattr(lzma, "DecompressionError", lzma.LZMAError)) as e:
+            out = {
+                "debug": {
+                    "mu_lj_iso": [],
+                    "egm_lj_iso": [],
+                    "gen_weights": [],
+                    "dPhi": [],
+                    "dsaMu_n": [],
+                    "mu_lj_min_dxy":[],
+                    "mu_lj_max_dxy":[],
+                    "mJJ": [],
+                }
+            }
             logger.error(f"LZMA decompression failed for file: {file_path}")
             logger.error(f"Exception: {e}")
-            return {events.metadata["dataset"]: {"out": None}}
+            return {events.metadata["dataset"]: {"out": out}}
     
         except Exception as e:
+            out = {
+                "debug": {
+                    "mu_lj_iso": [],
+                    "egm_lj_iso": [],
+                    "gen_weights": [],
+                    "dPhi": [],
+                    "dsaMu_n": [],
+                    "mu_lj_min_dxy":[],
+                    "mu_lj_max_dxy":[],
+                    "mJJ": [],
+                }
+            }
             logger.exception(f"Unexpected error while processing file: {file_path}")
-            return {events.metadata["dataset"]: {"out": None}}
+            return {events.metadata["dataset"]: {"out": out}}
 
     def make_vector(self, objs, collection, fields, type_id=None, mass=None):
         shape = ak.ones_like(objs[collection].pt, dtype=np.dtype(int))
