@@ -62,6 +62,7 @@ muon_base: &muon_base
   - "muon_eta_phi"
   - "muon_absD0"
   - "muon_absD0_lowRange"
+  - "mJJ"
 
 dsaMuon_base: &dsaMuon_base
   - "dsaMuon_n"

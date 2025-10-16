@@ -100,9 +100,7 @@ base: &base
     <<: *base_postLj_obj_cuts
   evt_cuts: &evt_base
     - *evt_baseNoLj
-    # - '2mu2e'
-    # - "deltaPhi(muLJ, egmLJ) > 1.5"
-    # - "Leading Mu-LJs Isolation"
+    - ">=2 LJs"
     
 
 
