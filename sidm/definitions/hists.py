@@ -2558,4 +2558,11 @@ hist_defs = {
                    lambda objs, mask: (objs["egm_ljs"][:, 0] + objs["mu_ljs"][:, 0]).mass)
         ],
     ),
+    "mJJ": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, 0, 1400.0, name=r"M_{jj}",
+                   label=r"$M_{jj}$ [GeV]"),
+                   lambda objs, mask: (objs["ljs"][:, 0] + objs["ljs"][:, 1]).mass)
+        ],
+    ),
 }
