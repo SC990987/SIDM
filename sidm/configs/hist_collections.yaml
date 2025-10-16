@@ -64,6 +64,7 @@ muon_base: &muon_base
   - "muon_absD0_lowRange"
   - "muon_numOverlapSegments_matchedDSAMuons"
   - "muon_numOverlapSegments_goodMatchedDSAMuons"
+  - "mJJ_2mu2e"
 
 dsaMuon_base: &dsaMuon_base
   - "dsaMuon_n"

@@ -2551,4 +2551,11 @@ hist_defs = {
         evt_mask=lambda objs: ((ak.num(matched(objs["genMus"], objs["muons"], 0.4)) > 0)
                                & (ak.num(matched(objs["genAs"], objs["muons"], 0.4)) > 0)),
     ),
+    "mJJ_2mu2e": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(30, 0, 1200.0, name=r"M_{jj}",
+                   label=r"$M_{jj}$ [GeV]"),
+                   lambda objs, mask: (objs["egm_ljs"][:, 0] + objs["mu_ljs"][:, 0]).mass)
+        ],
+    ),
 }
