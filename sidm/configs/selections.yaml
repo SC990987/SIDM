@@ -82,9 +82,9 @@ baseNoLj_egLj: &baseNoLj_egLj
 base_ljObjCut: &base_ljObjCut
   obj_cuts:
     <<: *obj_baseNoLj
-  # preLj_obj_cuts:
-  #   dsaMuons:
-  #     - "all"
+  preLj_obj_cuts:
+    dsaMuons:
+      - "all"
   postLj_obj_cuts: &base_postLj_obj_cuts
     ljs: &lj_base
       - "pT > 30 GeV"
@@ -99,10 +99,21 @@ base: &base
     <<: *obj_baseNoLj
   postLj_obj_cuts:
     <<: *base_postLj_obj_cuts
+  preLj_obj_cuts:
+    dsaMuons:
+      - "all"
   evt_cuts: &evt_base
     - *evt_baseNoLj
-    - ">=2 LJs"
+    #- ">=2 LJs"
 
+base2: &base2
+  obj_cuts: &obj_base2
+    <<: *obj_baseNoLj
+  postLj_obj_cuts:
+    <<: *base_postLj_obj_cuts
+  evt_cuts: &evt_base2
+    - *evt_baseNoLj
+    #- ">=2 LJs"
 4mu: &4mu
   <<: *base
   evt_cuts: &evt_4mu

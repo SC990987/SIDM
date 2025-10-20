@@ -2560,9 +2560,10 @@ hist_defs = {
     ),
     "mJJ": h.Histogram(
         [
-            h.Axis(hist.axis.Regular(50, 0, 1400.0, name=r"M_{jj}",
-                   label=r"$M_{jj}$ [GeV]"),
-                   lambda objs, mask: (objs["ljs"][:, 0] + objs["ljs"][:, 1]).mass)
+        h.Axis(hist.axis.Regular(50, 0, 1800, name="ljlj_mass",
+                                 label=r"Invariant Mass ($LJ_{0}$, $LJ_{1}$)"),
+               lambda objs, mask: objs["ljs"][mask, :2].sum().mass),
         ],
+        evt_mask=lambda objs: (ak.num(objs["ljs"]) > 1),
     ),
 }
