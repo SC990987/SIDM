@@ -222,6 +222,7 @@ class SidmProcessor(processor.ProcessorABC):
                     "dsaMu_n": ak.to_list((sel_objs["mu_ljs"][:,0].dsaMu_n)),
                     "mu_lj_min_dxy": ak.to_list(ak.min(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
                     "mu_lj_max_dxy": ak.to_list(ak.max(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
+                    "pfMu_n": ak.to_list((sel_objs["mu_ljs"][:,0].pfMu_n)),
                     "mJJ": ak.to_list((sel_objs["mu_ljs"][:,0] + sel_objs["egm_ljs"][:,0]).mass),
                 }
             return {events.metadata["dataset"]: {"out": out}}
@@ -237,6 +238,7 @@ class SidmProcessor(processor.ProcessorABC):
                     "mu_lj_min_dxy":[],
                     "mu_lj_max_dxy":[],
                     "mJJ": [],
+                    "pfMu_n": [],
                 }
             }
             logger.error(f"LZMA decompression failed for file: {file_path}")
@@ -254,6 +256,7 @@ class SidmProcessor(processor.ProcessorABC):
                     "mu_lj_min_dxy":[],
                     "mu_lj_max_dxy":[],
                     "mJJ": [],
+                    "pfMu_n": [],
                 }
             }
             logger.exception(f"Unexpected error while processing file: {file_path}")
