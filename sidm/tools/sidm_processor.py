@@ -217,7 +217,7 @@ class SidmProcessor(processor.ProcessorABC):
                 out["debug"] = {
                     # "mu_lj_iso": ak.to_list(sel_objs["mu_ljs"][:, 0].isolation),
                     # "egm_lj_iso": ak.to_list(sel_objs["egm_ljs"][:, 0].isolation),
-                    # "gen_weights": ak.to_list(events.Generator.weight),
+                    "gen_weights": ak.to_list(events.Generator.weight),
                     # "dPhi": ak.to_list(abs(sel_objs["mu_ljs"][:, 0].delta_phi(sel_objs["egm_ljs"][:, 0]))),
                     # "dsaMu_n": ak.to_list((sel_objs["mu_ljs"][:,0].dsaMu_n)),
                     # "mu_lj_min_dxy": ak.to_list(ak.min(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
@@ -226,7 +226,7 @@ class SidmProcessor(processor.ProcessorABC):
                     # "mJJ": ak.to_list((sel_objs["mu_ljs"][:,0] + sel_objs["egm_ljs"][:,0]).mass),
                     # "pixelHits": ak.to_list(ak.max(sel_objs["mu_ljs"].pfMuons.trkNumPixelHits)),
                     # "trkHits": ak.to_list(ak.max(sel_objs["mu_ljs"].pfMuons.trkNumTrkLayers)),
-                    "ljs": [sel_objs["ljs"]],
+                    "ljs": [ak.materialize(sel_objs["ljs"])],
                 }
             return {events.metadata["dataset"]: {"out": out}}
             
@@ -235,7 +235,7 @@ class SidmProcessor(processor.ProcessorABC):
                 "debug": {
                     # "mu_lj_iso": [],
                     # "egm_lj_iso": [],
-                    # "gen_weights": [],
+                    "gen_weights": [],
                     # "dPhi": [],
                     # "dsaMu_n": [],
                     # "mu_lj_min_dxy":[],
@@ -256,7 +256,7 @@ class SidmProcessor(processor.ProcessorABC):
                 "debug": {
                     # "mu_lj_iso": [],
                     # "egm_lj_iso": [],
-                    # "gen_weights": [],
+                    "gen_weights": [],
                     # "dPhi": [],
                     # "dsaMu_n": [],
                     # "mu_lj_min_dxy":[],
