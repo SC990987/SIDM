@@ -224,8 +224,8 @@ class SidmProcessor(processor.ProcessorABC):
                     "mu_lj_max_dxy": ak.to_list(ak.max(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
                     "pfMu_n": ak.to_list((sel_objs["mu_ljs"][:,0].pfMu_n)),
                     "mJJ": ak.to_list((sel_objs["mu_ljs"][:,0] + sel_objs["egm_ljs"][:,0]).mass),
-                    #"pixelHits": ak.to_list(ak.max(sel_objs["mu_ljs"].pfMuons.trkNumPixelHits)),
-                    #"trkHits": ak.to_list(ak.max(sel_objs["mu_ljs"].pfMuons.trkNumTrkLayers)),
+                    "pixelHits": [(ak.max(sel_objs["mu_ljs"].pfMuons.trkNumPixelHits))],
+                    "trkHits": [(ak.max(sel_objs["mu_ljs"].pfMuons.trkNumTrkLayers))],
                     #"ljs": [ak.materialize(sel_objs["ljs"])],
                 }
             return {events.metadata["dataset"]: {"out": out}}
@@ -242,8 +242,8 @@ class SidmProcessor(processor.ProcessorABC):
                     "mu_lj_max_dxy":[],
                     "mJJ": [],
                     "pfMu_n": [],
-                    #"pixelHits": [],
-                    #"trkHits": [],
+                    "pixelHits": [],
+                    "trkHits": [],
                     #"ljs": [],
                 }
             }
@@ -263,8 +263,8 @@ class SidmProcessor(processor.ProcessorABC):
                     "mu_lj_max_dxy":[],
                     "mJJ": [],
                     "pfMu_n": [],
-                    #"pixelHits": [],
-                    #"trkHits": [],
+                    "pixelHits": [],
+                    "trkHits": [],
                     #"ljs": [],
                 }
             }
