@@ -215,36 +215,36 @@ class SidmProcessor(processor.ProcessorABC):
             if self.debug:
             
                 out["debug"] = {
-                    # "mu_lj_iso": ak.to_list(sel_objs["mu_ljs"][:, 0].isolation),
-                    # "egm_lj_iso": ak.to_list(sel_objs["egm_ljs"][:, 0].isolation),
+                    "mu_lj_iso": ak.to_list(sel_objs["mu_ljs"][:, 0].isolation),
+                    "egm_lj_iso": ak.to_list(sel_objs["egm_ljs"][:, 0].isolation),
                     "gen_weights": ak.to_list(events.Generator.weight),
-                    # "dPhi": ak.to_list(abs(sel_objs["mu_ljs"][:, 0].delta_phi(sel_objs["egm_ljs"][:, 0]))),
-                    # "dsaMu_n": ak.to_list((sel_objs["mu_ljs"][:,0].dsaMu_n)),
-                    # "mu_lj_min_dxy": ak.to_list(ak.min(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
-                    # "mu_lj_max_dxy": ak.to_list(ak.max(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
-                    # "pfMu_n": ak.to_list((sel_objs["mu_ljs"][:,0].pfMu_n)),
-                    # "mJJ": ak.to_list((sel_objs["mu_ljs"][:,0] + sel_objs["egm_ljs"][:,0]).mass),
-                    # "pixelHits": ak.to_list(ak.max(sel_objs["mu_ljs"].pfMuons.trkNumPixelHits)),
-                    # "trkHits": ak.to_list(ak.max(sel_objs["mu_ljs"].pfMuons.trkNumTrkLayers)),
-                    "ljs": [ak.materialize(sel_objs["ljs"])],
+                    "dPhi": ak.to_list(abs(sel_objs["mu_ljs"][:, 0].delta_phi(sel_objs["egm_ljs"][:, 0]))),
+                    "dsaMu_n": ak.to_list((sel_objs["mu_ljs"][:,0].dsaMu_n)),
+                    "mu_lj_min_dxy": ak.to_list(ak.min(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
+                    "mu_lj_max_dxy": ak.to_list(ak.max(abs(sel_objs["mu_ljs"][:, 0].muons.dxy), axis=-1)),
+                    "pfMu_n": ak.to_list((sel_objs["mu_ljs"][:,0].pfMu_n)),
+                    "mJJ": ak.to_list((sel_objs["mu_ljs"][:,0] + sel_objs["egm_ljs"][:,0]).mass),
+                    "pixelHits": ak.to_list(ak.max(sel_objs["mu_ljs"].pfMuons.trkNumPixelHits)),
+                    "trkHits": ak.to_list(ak.max(sel_objs["mu_ljs"].pfMuons.trkNumTrkLayers)),
+                    #"ljs": [ak.materialize(sel_objs["ljs"])],
                 }
             return {events.metadata["dataset"]: {"out": out}}
             
         except (lzma.LZMAError, getattr(lzma, "DecompressionError", lzma.LZMAError)) as e:
             out = {
                 "debug": {
-                    # "mu_lj_iso": [],
-                    # "egm_lj_iso": [],
+                    "mu_lj_iso": [],
+                    "egm_lj_iso": [],
                     "gen_weights": [],
-                    # "dPhi": [],
-                    # "dsaMu_n": [],
-                    # "mu_lj_min_dxy":[],
-                    # "mu_lj_max_dxy":[],
-                    # "mJJ": [],
-                    # "pfMu_n": [],
-                    # "pixelHits": [],
-                    # "trkHits": [],
-                    "ljs": [],
+                    "dPhi": [],
+                    "dsaMu_n": [],
+                    "mu_lj_min_dxy":[],
+                    "mu_lj_max_dxy":[],
+                    "mJJ": [],
+                    "pfMu_n": [],
+                    "pixelHits": [],
+                    "trkHits": [],
+                    #"ljs": [],
                 }
             }
             logger.error(f"LZMA decompression failed for file: {file_path}")
@@ -254,18 +254,18 @@ class SidmProcessor(processor.ProcessorABC):
         except Exception as e:
             out = {
                 "debug": {
-                    # "mu_lj_iso": [],
-                    # "egm_lj_iso": [],
+                    "mu_lj_iso": [],
+                    "egm_lj_iso": [],
                     "gen_weights": [],
-                    # "dPhi": [],
-                    # "dsaMu_n": [],
-                    # "mu_lj_min_dxy":[],
-                    # "mu_lj_max_dxy":[],
-                    # "mJJ": [],
-                    # "pfMu_n": [],
-                    # "pixelHits": [],
-                    # "trkHits": [],
-                    "ljs": [],
+                    "dPhi": [],
+                    "dsaMu_n": [],
+                    "mu_lj_min_dxy":[],
+                    "mu_lj_max_dxy":[],
+                    "mJJ": [],
+                    "pfMu_n": [],
+                    "pixelHits": [],
+                    "trkHits": [],
+                    #"ljs": [],
                 }
             }
             logger.exception(f"Unexpected error while processing file: {file_path}")
