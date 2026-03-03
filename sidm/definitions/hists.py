@@ -3180,7 +3180,7 @@ hist_defs = {
     ),
     "genAs_toE_matched_egmLj_lxy": h.Histogram(
         [
-            h.Axis(hist.axis.Regular(100, 0, 150, name=r"$Z_d$ $L_{xy}$ $(cm)$"),
+            h.Axis(hist.axis.Regular(30, 0, 150, name=r"$Z_d$ $L_{xy}$ $(cm)$"),
                    lambda objs, mask: lxy(derived_objs["genAs_toE_matched_egmLj"](objs, 0.4)) ),
         ],
     ),
