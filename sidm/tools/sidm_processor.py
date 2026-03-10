@@ -226,6 +226,18 @@ class SidmProcessor(processor.ProcessorABC):
                     "mJJ": ak.to_list((sel_objs["mu_ljs"][:,0] + sel_objs["egm_ljs"][:,0]).mass),
                     "pixelHits": ak.to_list(ak.max(sel_objs["mu_ljs"][:,0].pfMuons.trkNumPixelHits, axis=-1)),
                     "trkHits": ak.to_list(ak.max(sel_objs["mu_ljs"][:,0].pfMuons.trkNumTrkLayers, axis=-1)),
+                    "leading_lj_isolation": ak.to_list(sel_objs["ljs"][:, 0].isolation),
+                    "subleading_lj_isolation": ak.to_list(sel_objs["ljs"][:, 1].isolation),
+                    "4mu_dPhi": ak.to_list(abs(sel_objs["ljs"][:, 0].delta_phi(sel_objs["ljs"][:, 1]))),
+                    "4mu_mJJ": ak.to_list((sel_objs["ljs"][:,0] + sel_objs["ljs"][:,1]).mass),
+                    "SubLeading_pfMu_n": ak.to_list((sel_objs["ljs"][:,1].pfMu_n)),
+                    "SubLeading_dsaMu_n": ak.to_list((sel_objs["ljs"][:,1].dsaMu_n)),
+                    "SubLeading_pixelHits": ak.to_list(ak.max(sel_objs["ljs"][:,1].pfMuons.trkNumPixelHits, axis=-1)),
+                    "Leading_pfMu_n": ak.to_list((sel_objs["ljs"][:,0].pfMu_n)),
+                    "Leading_dsaMu_n": ak.to_list((sel_objs["ljs"][:,0].dsaMu_n)),
+                    "Leading_pixelHits": ak.to_list(ak.max(sel_objs["ljs"][:,0].pfMuons.trkNumPixelHits, axis=-1)),
+                    
+                    
                     #"ljs": [ak.materialize(sel_objs["ljs"])],
                 }
             return {events.metadata["dataset"]: {"out": out}}
@@ -244,6 +256,16 @@ class SidmProcessor(processor.ProcessorABC):
                     "pfMu_n": [],
                     "pixelHits": [],
                     "trkHits": [],
+                    "leading_lj_isolation": [],
+                    "subleading_lj_isolation": [],
+                    "4mu_dPhi": [],
+                    "4mu_mJJ": [],
+                    "SubLeading_pfMu_n": [],
+                    "SubLeading_dsaMu_n": [],
+                    "SubLeading_pixelHits": [],
+                    "Leading_pfMu_n": [],
+                    "Leading_dsaMu_n": [],
+                    "Leading_pixelHits": [],
                     #"ljs": [],
                 }
             }
@@ -265,6 +287,16 @@ class SidmProcessor(processor.ProcessorABC):
                     "pfMu_n": [],
                     "pixelHits": [],
                     "trkHits": [],
+                    "leading_lj_isolation": [],
+                    "subleading_lj_isolation": [],
+                    "4mu_dPhi": [],
+                    "4mu_mJJ": [],
+                    "SubLeading_pfMu_n": [],
+                    "SubLeading_dsaMu_n": [],
+                    "SubLeading_pixelHits": [],
+                    "Leading_pfMu_n": [],
+                    "Leading_dsaMu_n": [],
+                    "Leading_pixelHits": [],
                     #"ljs": [],
                 }
             }
