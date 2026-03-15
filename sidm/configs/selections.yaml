@@ -104,8 +104,8 @@ base: &base
       - "all"
   evt_cuts: &evt_base
     - *evt_baseNoLj
-    #- "2mu2e"
-    - ">=2 LJs"
+    - "2mu2e"
+    #- ">=2 LJs"
 
 base2: &base2
   obj_cuts: &obj_base2
