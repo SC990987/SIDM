@@ -1,0 +1,3 @@
+region,weighted_pearson,weighted_spearman_like,n_rows,weighted_yield
+global_after_base_cuts,-0.0697796913583234,-0.07438275778877734,5104,5569.08646853237
+local_window_pm_0.05,-0.3192319335649817,-0.058543500056149646,27,40.49069259403208

@@ -1,0 +1,85 @@
+{
+  "created_utc": "2026-05-19T18:20:24.557519+00:00",
+  "dphi_cut": 2.0,
+  "pixel_cut": 3,
+  "mjj_cut": 150.0,
+  "scan_min": 0.0,
+  "scan_max": 0.75,
+  "n_steps": 8,
+  "target_a_min": 50.0,
+  "target_a_max": 200.0,
+  "target_a": 100.0,
+  "max_abs_closure": 0.5,
+  "max_abs_closure_sig": 2.0,
+  "closure_band": 0.1,
+  "closure_compat_sigma": 2.0,
+  "neighborhood_size": 3,
+  "top_n_candidates": 5,
+  "min_sideband_count": 5.0,
+  "edge_margin_bins": 2,
+  "mu_iso_candidate_min": 0.05,
+  "mu_iso_candidate_max": 0.6,
+  "egm_iso_candidate_min": 0.05,
+  "egm_iso_candidate_max": 0.6,
+  "n_signal_samples": 48,
+  "n_background_samples": 15,
+  "required_variable_missing": {
+    "signal": {},
+    "backgrounds": {
+      "background_0_0": [
+        "sample_name"
+      ],
+      "background_1_1": [
+        "sample_name"
+      ],
+      "background_2_2": [
+        "sample_name"
+      ],
+      "background_3_3": [
+        "sample_name"
+      ],
+      "background_4_4": [
+        "sample_name"
+      ],
+      "background_5_5": [
+        "sample_name"
+      ],
+      "background_6_6": [
+        "sample_name"
+      ],
+      "background_7_7": [
+        "sample_name"
+      ],
+      "background_8_8": [
+        "sample_name"
+      ],
+      "background_9_9": [
+        "sample_name"
+      ],
+      "background_10_10": [
+        "sample_name"
+      ],
+      "background_11_11": [
+        "sample_name"
+      ],
+      "background_12_12": [
+        "sample_name"
+      ],
+      "background_13_13": [
+        "sample_name"
+      ],
+      "background_14_14": [
+        "sample_name"
+      ]
+    }
+  },
+  "abcd_plane": {
+    "x_axis": "isolation",
+    "y_axis": "egm_isolation",
+    "A": "isolation <= muIsoCut and egm_isolation <= egmIsoCut",
+    "B": "isolation > muIsoCut and egm_isolation <= egmIsoCut",
+    "C": "isolation <= muIsoCut and egm_isolation > egmIsoCut",
+    "D": "isolation > muIsoCut and egm_isolation > egmIsoCut"
+  },
+  "closure_convention": "1 - prediction / observed_A"
+}

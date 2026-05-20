@@ -1,0 +1,23 @@
+{
+  "created_utc": "2026-05-19T15:04:08.223722+00:00",
+  "background_dir": "/home/cms-jovyan/SIDM/sidm/studies/background_estimation/Updated-Background-JSONS",
+  "n_background_samples": 15,
+  "dphi_cut": 2.0,
+  "pixel_cut": 3,
+  "mjj_cuts": [
+    100.0,
+    150.0
+  ],
+  "n_steps": 100,
+  "scan_min": 0.0,
+  "scan_max": 0.75,
+  "fixed_mu_iso": 0.75,
+  "fixed_egm_iso": 0.75,
+  "abcd_axes": {
+    "A": "dPhi pass, displacement pass",
+    "B": "dPhi pass, displacement fail",
+    "C": "dPhi fail, displacement pass",
+    "D": "dPhi fail, displacement fail"
+  },
+  "closure_convention": "1 - prediction / observed_A"
+}

@@ -1,0 +1,18 @@
+{
+    "dPhi": [],
+    "isolation": [],
+    "mJJ": [],
+    "egm_isolation": [],
+    "mu_lj_min_dxy": [],
+    "gen_weights": [
+        9343725.940307617
+    ],
+    "mu_lj_max_dxy": [],
+    "dsaMu_n": [],
+    "pfMu_n": [],
+    "pixelHits": [],
+    "trkHits": [],
+    "passing_weights": [],
+    "nevents": 9343725.940307617,
+    "xsec": 2800000.0
+}
