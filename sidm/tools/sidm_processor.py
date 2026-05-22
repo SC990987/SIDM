@@ -174,8 +174,8 @@ class SidmProcessor(processor.ProcessorABC):
                     sel_objs["lj_reco"] = lj_reco
     
                     # define event weights
-                    evt_weights =  self.obj_defs["weight"](events)*events.metadata["skim_factor"]
-    
+                    skim_factor = events.metadata.get("skim_factor", 1.0)
+                    evt_weights = self.obj_defs["weight"](events) * skim_factor
                     # make cutflow
                     if lj_reco not in cutflows:
                         cutflows[str(lj_reco)] = {}
@@ -237,6 +237,15 @@ class SidmProcessor(processor.ProcessorABC):
                     "Leading_dsaMu_n": ak.to_list((sel_objs["ljs"][:,0].dsaMu_n)),
                     "Leading_pixelHits": ak.to_list(ak.max(sel_objs["ljs"][:,0].pfMuons.trkNumPixelHits, axis=-1)),
                     "passing_weights": ak.to_list(sel_objs["weight"]),
+                    "mu_lj_pt": ak.to_list(sel_objs["mu_ljs"][:, 0].pt),
+                    "mu_lj_eta": ak.to_list(sel_objs["mu_ljs"][:, 0].eta),
+                    "mu_lj_phi": ak.to_list(sel_objs["mu_ljs"][:, 0].phi),
+                    "egm_lj_pt": ak.to_list(sel_objs["egm_ljs"][:, 0].pt),
+                    "egm_lj_eta": ak.to_list(sel_objs["egm_ljs"][:, 0].eta),
+                    "egm_lj_phi": ak.to_list(sel_objs["egm_ljs"][:, 0].phi),
+                    "dR": ak.to_list(abs(sel_objs["mu_ljs"][:, 0].delta_r(sel_objs["egm_ljs"][:, 0]))),
+                    "deltaEta": ak.to_list(abs(sel_objs["mu_ljs"][:, 0].eta - sel_objs["egm_ljs"][:, 0].eta)),
+
                     
                     
                     #"ljs": [ak.materialize(sel_objs["ljs"])],
@@ -268,6 +277,14 @@ class SidmProcessor(processor.ProcessorABC):
                     "Leading_dsaMu_n": [],
                     "Leading_pixelHits": [],
                     "passing_weights": [],
+                    "mu_lj_pt": [],
+                    "mu_lj_eta": [],
+                    "mu_lj_phi": [],
+                    "egm_lj_pt": [],
+                    "egm_lj_eta": [],
+                    "egm_lj_phi": [],
+                    "dR": [],
+                    "deltaEta": [],
                     #"ljs": [],
                 }
             }
@@ -300,6 +317,14 @@ class SidmProcessor(processor.ProcessorABC):
                     "Leading_dsaMu_n": [],
                     "Leading_pixelHits": [],
                     "passing_weights": [],
+                    "mu_lj_pt": [],
+                    "mu_lj_eta": [],
+                    "mu_lj_phi": [],
+                    "egm_lj_pt": [],
+                    "egm_lj_eta": [],
+                    "egm_lj_phi": [],
+                    "dR": [],
+                    "deltaEta": [],
                     #"ljs": [],
                 }
             }
