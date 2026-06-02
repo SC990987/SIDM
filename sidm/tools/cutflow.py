@@ -8,6 +8,58 @@ from coffea.analysis_tools import PackedSelection
 import awkward as ak
 import numpy as np
 
+class SimpleCutflow(processor.AccumulatorABC):
+    def __init__(self, verbose=False):
+        self.verbose = verbose
+        self.rows = {}
+
+    def identity(self):
+        """Create additive identity Cutflow to allow accumlator behavior"""
+        cutflow = SimpleCutflow()
+        for cut in self.rows:
+            cutflow.add_row(cut, 0, 0.0)
+        return cutflow
+
+    def add(self, other):
+        """Add two cutflows"""
+        if self.rows.keys() != other.rows.keys():
+            raise RuntimeError("Cutflows must have same set of cuts to be added")
+        for cut in self.rows:
+            self.rows[cut]["raw"] += other.rows[cut]["raw"]
+            self.rows[cut]["weighted"] += other.rows[cut]["weighted"]
+
+    def scale(self, weight):
+        """Apply overall scale factor to weighted Cutflow"""
+        for cut in self.rows:
+            self.rows[cut]["weighted"] *= weight
+
+    def add_row(self, cut, raw, weighted): 
+        """Add additional cut and associated cut to cutflow"""
+        if cut in self.rows:
+            raise RuntimeError(f"{cut} already in cutflow and cannot be added twice")
+        self.rows[cut] = {"raw": raw, "weighted": weighted}
+
+    def print_table(self):
+        """Print simple cutflow table to stdout"""
+        headers = [
+            "cut name",
+            "raw N",
+            "weighted N",
+            "weighted %",
+        ]
+        data = []
+        for cut, vals in self.rows.items():
+            if cut == "None":
+                total_weighted = vals["weighted"]
+            data.append([
+                cut,
+                vals["raw"],
+                vals["weighted"],
+                100*vals["weighted"]/total_weighted
+            ])
+        print(tabulate(data, headers, floatfmt=".1f"))
+
+
 class Cutflow(processor.AccumulatorABC):
     """Class to represent the number of events that pass each cut in a selection
 
@@ -132,18 +184,19 @@ class CutflowElement(processor.AccumulatorABC):
         """Create each cutflow table row"""
         self.cut = cut
         self.cutflow = cutflow
-        self.n_evts = ak.sum(weights)
+        self.n_evts = cutflow["None"]["Weighted"]
         self.is_first_element = is_first_element
-        self.f_ind = None
+        #self.f_ind = None
         self.f_all = None
         self.f_mar = None
 
         if is_first_element or self.n_evts == 0:
-            self.n_ind = self.n_evts
+            #self.n_ind = self.n_evts
             self.n_all = self.n_evts
         else:
             cumulative_cuts = self.cutflow.selection[:self.cutflow.selection.index(cut) + 1]
-            self.n_ind = ak.sum(weights[all_cuts.all(cut)])
+            print(f"making cutflow: {cut}")
+            #self.n_ind = ak.sum(weights[all_cuts.all(cut)])
             self.n_all = ak.sum(weights[all_cuts.all(*cumulative_cuts)])
 
     def identity(self):

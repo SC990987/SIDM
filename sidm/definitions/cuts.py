@@ -4,7 +4,7 @@
 import awkward as ak
 # local
 from sidm.definitions.objects import derived_objs
-from sidm.tools.utilities import dR, lxy, rho, check_bits, returnBitMapTArrayPhoton, dR_outer
+from sidm.tools.utilities import dR, lxy, rho, check_bits, returnBitMapTArrayPhoton, dR_outer, cosAlpha
 
 obj_cut_defs = {
     "pvs": {
@@ -21,6 +21,8 @@ obj_cut_defs = {
         "pT > 60 GeV": lambda objs: objs["ljs"].pt > 60,
         "pT < 150 GeV": lambda objs: objs["ljs"].pt < 150,
         "|eta| < 2.4": lambda objs: abs(objs["ljs"].eta) < 2.4,
+        "barrel": lambda objs: abs(objs["ljs"].eta) < 1.479,
+        "endcap": lambda objs: ((abs(objs["ljs"].eta) > 1.479)& (abs(objs["ljs"].eta) < 2.4)),
         "mu_charge == 0": lambda objs: ak.sum(objs["ljs"].muons.charge, axis= -1) == 0,
         "dR(LJ, A) < 0.2": lambda objs: dR(objs["ljs"], objs["genAs"]) < 0.2,
         "egmLj": lambda objs: ak.num(objs["ljs"].muons) == 0,
@@ -30,8 +32,11 @@ obj_cut_defs = {
         "muLj": lambda objs: ak.num(objs["ljs"].muons) > 0,
         "pfMuLj": lambda objs: (ak.num(objs["ljs"].pfMuons) > 0) & (ak.num(objs["ljs"].dsaMuons) == 0),
         "dsaMuLj": lambda objs: ak.num(objs["ljs"].dsaMuons) > 0,
-        "2dsaMuLj": lambda objs: ak.num(objs["ljs"].dsaMuons) > 2,
+        "2dsaMuLj": lambda objs: ak.num(objs["ljs"].dsaMuons) > 1,
         "pfDsaMuLj": lambda objs: (ak.num(objs["ljs"].pfMuons) > 0) & (ak.num(objs["ljs"].dsaMuons) > 0),
+        "2muLj": lambda objs: objs["ljs"].muon_n >= 2,
+        "lj_iso < 0.1": lambda objs: objs["ljs"].isolation < 0.1,
+        "lj_iso < 0.2": lambda objs: objs["ljs"].isolation < 0.2,
     },
     "egm_ljs": {
         "eLj": lambda objs: (objs["egm_ljs"].electron_n > 0) & (objs["egm_ljs"].photon_n == 0),
@@ -42,20 +47,34 @@ obj_cut_defs = {
         "2eLj": lambda objs: (objs["egm_ljs"].electron_n == 2) & (objs["egm_ljs"].photon_n == 0),
         "1gLj": lambda objs: (objs["egm_ljs"].electron_n == 0) & (objs["egm_ljs"].photon_n == 1),
         "2gLj": lambda objs: (objs["egm_ljs"].electron_n == 0) & (objs["egm_ljs"].photon_n == 2),
+        "egm_lj_iso < 0.2": lambda objs: objs["egm_ljs"].isolation < 0.2,
+        "lostHits >= 1": lambda objs: ak.min(objs["egm_ljs"].electrons.trkNumPixelHits, axis=-1) >= 1,
+        "displaced": lambda objs: (ak.min(objs["egm_ljs"].egamma.lostHits, axis=-1) >= 1)
     },
     "mu_ljs": {
         "pfMuLj": lambda objs: (objs["mu_ljs"].pfMu_n > 0) & (objs["mu_ljs"].dsaMu_n == 0),
         "dsaMuLj": lambda objs: (objs["mu_ljs"].pfMu_n == 0) & (objs["mu_ljs"].dsaMu_n > 0),
         "pf_dsa_muLj": lambda objs: (objs["mu_ljs"].pfMu_n > 0) & (objs["mu_ljs"].dsaMu_n > 0),
+        "1dsaMuLj": lambda objs: objs["mu_ljs"].dsaMu_n > 0,
+        "mu_lj_iso < 0.1": lambda objs: objs["mu_ljs"].isolation < 0.1,
+        "pf_pixelhits <= 2": lambda objs: ak.max(objs["mu_ljs"].pfMuons.trkNumPixelHits, axis=-1) <= 2,
+        "displaced": lambda objs: (ak.max(objs["mu_ljs"].muons.trkNumPixelHits, axis=-1) <= 2) ,
+        "Mu == 1": lambda objs: objs["mu_ljs"].muon_n == 1,
+        "Mu == 2": lambda objs: objs["mu_ljs"].muon_n == 2,
+        "Mu == 3": lambda objs: objs["mu_ljs"].muon_n == 3,
+        "Mu >= 4": lambda objs: objs["mu_ljs"].muon_n >= 4,
+        "Mu >= 2": lambda objs: objs["mu_ljs"].muon_n >= 2,
     },
     "genMus":{
         "pT >= 10 GeV": lambda objs: objs["genMus"].pt >= 10,
         "status 1": lambda objs: objs["genMus"].status == 1,
+        "status 23": lambda objs: objs["genMus"].status == 23,
         "fromGenA": lambda objs: abs(objs["genMus"].distinctParent.pdgId) == 32,
         "parent == A": lambda objs: abs(objs["genMus"].parent.pdgId) == 32,
     },
     "genEs":{
         "status 1": lambda objs: objs["genEs"].status == 1,
+        "status 23": lambda objs: objs["genEs"].status == 23,
         "fromGenA": lambda objs: abs(objs["genEs"].distinctParent.pdgId) == 32,
         "parent == A": lambda objs: abs(objs["genEs"].parent.pdgId) == 32,
     },
@@ -72,7 +91,7 @@ obj_cut_defs = {
         "lxy <= 100 cm": lambda objs: lxy(objs["genAs"]) <= 100,
         "lxy <= 150 cm": lambda objs: lxy(objs["genAs"]) <= 150,
         "lxy <= 250 cm": lambda objs: lxy(objs["genAs"]) <= 250,
-        "lxy <= 400 cm": lambda objs: lxy(objs["genAs_toMu"]) <= 400,
+        "lxy <= 400 cm": lambda objs: lxy(objs["genAs"]) <= 400,
         "pT > 30 GeV": lambda objs: objs["genAs"].pt > 30,
         "pT < 300 GeV": lambda objs: objs["genAs"].pt < 300,
     },
@@ -105,7 +124,7 @@ obj_cut_defs = {
         "lxy <= 100 cm": lambda objs: lxy(objs["genAs_toE"]) <= 100,
         "lxy <= 150 cm": lambda objs: lxy(objs["genAs_toE"]) <= 150,
         "lxy <= 250 cm": lambda objs: lxy(objs["genAs_toE"]) <= 250,
-        "lxy <= 400 cm": lambda objs: lxy(objs["genAs_toMu"]) <= 400,
+        "lxy <= 400 cm": lambda objs: lxy(objs["genAs_toE"]) <= 400,
         "pT > 30 GeV": lambda objs: objs["genAs_toE"].pt > 30,
         "pT < 300 GeV": lambda objs: objs["genAs_toE"].pt < 300,
     },
@@ -119,8 +138,8 @@ obj_cut_defs = {
         "dR(e, A) < 0.5": lambda objs: dR(objs["electrons"], objs["genAs_toE"]) < 0.5,
         "looseID": lambda objs: objs["electrons"].cutBased >= 2,
         "photonIdx": lambda objs: objs["electrons"].photonIdx != -1,
-        "barrel": lambda objs: (objs["electrons"].eta + objs["electrons"].deltaEtaSC) <= 1.479 ,
-        "endcap": lambda objs: (objs["electrons"].eta + objs["electrons"].deltaEtaSC) > 1.479 ,
+        "barrel": lambda objs: abs(objs["electrons"].eta + objs["electrons"].deltaEtaSC) <= 1.479 ,
+        "endcap": lambda objs: ((abs(objs["electrons"].eta + objs["electrons"].deltaEtaSC) > 1.479) & (abs(objs["electrons"].eta + objs["electrons"].deltaEtaSC) < 2.4)),
         "barrel_sieie": lambda objs: objs["electrons"].sieie <= 0.0112,
         "barrel_iso": lambda objs: objs["electrons"].pfRelIso03_all < (.112 + .506/objs["electrons"].pt),
         "barrel_hoe": lambda objs: objs["electrons"].hoe < 0.05 + 1.16/((1 + objs["electrons"].scEtOverPt) * objs["electrons"].pt) + 0.0324*objs["rho_PFIso"]/((1 + objs["electrons"].scEtOverPt) * objs["electrons"].pt),
@@ -134,14 +153,19 @@ obj_cut_defs = {
         'MVANonIsoWPL': lambda objs: objs['electrons'].mvaFall17V2noIso_WPL,
         "missing_hits == 0" : lambda objs: objs["electrons"].lostHits == 0,
         "missing_hits == 1" : lambda objs: objs["electrons"].lostHits == 1,
+        "dxy >= 0.05" : lambda objs: objs["electrons"].dxy >= 0.05,
     },
     "muons": {
         #Tested the following to try to enable us to apply these cuts to muons *and* matched_muons associated to dsas
         "looseID": lambda objs, muons: muons.looseId,
-        "looseID": lambda objs, muons: muons.looseId,
         "pT > 5 GeV": lambda objs, muons: muons.pt > 5,
         "|eta| < 2.4": lambda objs, muons: abs(muons.eta) < 2.4,
         "dR(mu, A) < 0.5": lambda objs, muons: dR(muons, objs["genAs_toMu"]) < 0.5,
+        "dR(mu, A) < 0.5 nested": lambda objs, muons: dR(muons, objs["genAs_toMu"][:,:,None]) < 0.5,
+        "dxy >= 0.008" : lambda objs, muons: muons.dxy >= 0.008,
+        "trkNumPixelHits <= 2" : lambda objs, muons: muons.trkNumPixelHits <= 2,
+        "barrel": lambda objs, muons: abs(muons.eta) <= 1.479,
+        "endcap": lambda objs, muons: ((abs(muons.eta) > 1.479) & (abs(muons.eta) < 2.4)),
     },
     "photons":{
         "pT > 20 GeV": lambda objs: objs["photons"].pt > 20,
@@ -164,6 +188,8 @@ obj_cut_defs = {
     },
     "dsaMuons": {
         "pT > 10 GeV": lambda objs, dsa: dsa.pt > 10,
+        "|dxy| <= 40": lambda objs, dsa: abs(dsa.dxy) <= 40,
+        "|dz| <= 60": lambda objs, dsa: abs(dsa.dz) <= 60,
         "|eta| < 2.4": lambda objs, dsa: abs(dsa.eta) < 2.4,
         # displaced ID as a single flag and as individual cuts
         "displaced ID" : lambda objs, dsa: dsa.displacedID > 0,
@@ -173,10 +199,19 @@ obj_cut_defs = {
                                            & (dsa.trkNumDTHits <= 18)), False, True),
         "normChi2 < 2.5": lambda objs, dsa: dsa.normChi2 < 2.5,
         "ptErrorOverPT < 1": lambda objs, dsa: (dsa.ptErr / dsa.pt) < 1.0,
+        "barrel": lambda objs, dsa: abs(dsa.eta) <= 1.479,
+        "endcap": lambda objs, dsa: ((abs(dsa.eta) > 1.479) & (abs(dsa.eta) < 2.4)),
         # just use segment-based matching
        # "no PF match" : lambda objs, dsa: dsa.muonMatch1/dsa.nSegments < 0.667,
         "dR(mu, A) < 0.5": lambda objs, dsa: dR(dsa, objs["genAs_toMu"]) < 0.5,
+        "dR(mu, A) < 0.5 nested": lambda objs, dsa: dR(dsa, objs["genAs_toMu"][:,:,None]) < 0.5,
         "dR(dsa, pf) > 0.2": lambda objs, dsa: dR(dsa, objs["muons"]) > 0.2,
+        "segmatch veto": lambda objs, dsa: ak.all(dsa.good_matched_muons.numMatch < 1, axis=2),
+        "segmatch veto + charge": lambda objs, dsa: ak.all((dsa.good_matched_muons.numMatch < 1) | (dsa.charge[:,:,None] != dsa.good_matched_muons.charge), axis=2),
+        "segmatch veto + dR outer": lambda objs, dsa: ak.all((dsa.good_matched_muons.numMatch < 1) | (dR_outer(dsa[:,:,None], dsa.good_matched_muons) > 0.1), axis=2),
+        "segmatch veto + num seg": lambda objs, dsa: ak.all((dsa.good_matched_muons.numMatch < 1) | (dsa.good_matched_muons.numMatch/(dsa.nSegments[:,:,None]) < 0.34), axis=2),
+        "all": lambda objs, dsa: ak.all((dsa.good_matched_muons.numMatch < 1) | (dR_outer(dsa[:,:,None], dsa.good_matched_muons) > 0.1) | (dsa.good_matched_muons.numMatch/(dsa.nSegments[:,:,None]) < 0.34), axis=2),
+        "all + charge": lambda objs, dsa: ak.all((dsa.good_matched_muons.numMatch < 1) | (dsa.charge[:,:,None] != dsa.good_matched_muons.charge) | (dR_outer(dsa[:,:,None], dsa.good_matched_muons) > 0.1) | (dsa.good_matched_muons.numMatch/(dsa.nSegments[:,:,None]) < 0.34), axis=2),
     },
 }
 
@@ -185,16 +220,28 @@ evt_cut_defs = {
     "Keep all evts": lambda objs: objs["pvs"].npvs >= 0,
     "pass triggers": lambda objs: (
           objs["hlt"].DoubleL2Mu23NoVtx_2Cha
-        | objs["hlt"].DoubleL2Mu23NoVtx_2Cha_NoL2Matched
         | objs["hlt"].DoubleL2Mu23NoVtx_2Cha_CosmicSeed
-        | objs["hlt"].DoubleL2Mu23NoVtx_2Cha_CosmicSeed_NoL2Matched
         | objs["hlt"].DoubleL2Mu25NoVtx_2Cha_Eta2p4
         | objs["hlt"].DoubleL2Mu25NoVtx_2Cha_CosmicSeed_Eta2p4
+    ),
+    "pass flags": lambda objs: (
+          objs["flags"].goodVertices
+        & objs["flags"].globalSuperTightHalo2016Filter
+        & objs["flags"].HBHENoiseFilter
+        & objs["flags"].HBHENoiseIsoFilter
+        & objs["flags"].EcalDeadCellTriggerPrimitiveFilter
+        & objs["flags"].BadPFMuonFilter
+        & objs["flags"].BadPFMuonDzFilter
+        & objs["flags"].eeBadScFilter
+        & objs["flags"].ecalBadCalibFilter
+        & objs["flags"].hfNoisyHitsFilter
     ),
     ">=1 muon": lambda objs: ak.num(objs["muons"]) >= 1,
     "PV filter": lambda objs: ak.flatten(objs["pvs"].npvsGood) >= 1,
     #"Cosmic veto": lambda objs: objs["cosmicveto"].result,
     ">=2 LJs": lambda objs: ak.num(objs["ljs"]) >= 2,
+    ">=1 egm_ljs": lambda objs: ak.num(objs["egm_ljs"]) >= 1,
+    ">=1 mu_ljs": lambda objs: ak.num(objs["mu_ljs"]) >= 1,
     ">=2 matched As": lambda objs: ak.num(derived_objs["genAs_matched_lj"](objs, 0.2)) >= 2,
     # 4mu: leading two LJs are both mu-type
     "4mu": lambda objs: ak.count_nonzero(objs["ljs"][:, :2].muon_n >= 2, axis=-1) == 2,
@@ -210,6 +257,24 @@ evt_cut_defs = {
     "50 GeV <= GenMu0_pT <= 60 GeV": lambda objs : (objs["genMus"][:, 0].pt >=50) & (objs["genMus"][:, 0].pt <=60),
     "genMus": lambda objs: ak.num(objs["genMus"]) > 1,
     "dR(Mu_0, Mu_1) > 0.03": lambda objs: objs["genMus"][:,0].delta_r(objs["genMus"][:,1]) > 0.03,
+    "LJ-LJ dPhi > 2": lambda objs: abs(objs["ljs"][:, 0].delta_phi(objs["ljs"][:, 1])) > 2.0,
+    "= 1 LJs": lambda objs: ak.num(objs["ljs"]) == 1,
+    "= 1 muLJs": lambda objs: (ak.num(objs["mu_ljs"]) == 1) & (ak.num(objs["egm_ljs"]) == 0),
+    "= 1 egmLJs": lambda objs: (ak.num(objs["mu_ljs"]) == 0) & (ak.num(objs["egm_ljs"]) == 1),
+    "all cos_alpha(dsa, dsa) > -0.9": lambda objs: ak.all(cosAlpha(objs["dsaMuons"]) > -0.9, axis=1),
+}
+
+preLj_obj_cut_defs = {
+    "dsaMuons": { 
+        "segmatch veto": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+        "segmatch veto + charge": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (objs["dsaMuons"].charge[:,:,None] != objs["dsaMuons"].good_matched_muons.charge) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+        "segmatch veto + dR outer": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (dR_outer(objs["dsaMuons"][:,:,None], objs["dsaMuons"].good_matched_muons) > 0.1) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+        "segmatch veto + num seg": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (objs["dsaMuons"].good_matched_muons.numMatch/(objs["dsaMuons"].nSegments[:,:,None]) < 0.34) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+        "segmatch veto + dR outer + num seg": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (dR_outer(objs["dsaMuons"][:,:,None], objs["dsaMuons"].good_matched_muons) > 0.1) |
+                                    (objs["dsaMuons"].good_matched_muons.numMatch/(objs["dsaMuons"].nSegments[:,:,None]) < 0.34) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+        "all": lambda objs: ak.all((objs["dsaMuons"].good_matched_muons.numMatch < 1) | (objs["dsaMuons"].charge[:,:,None] != objs["dsaMuons"].good_matched_muons.charge) | (dR_outer(objs["dsaMuons"][:,:,None], objs["dsaMuons"].good_matched_muons) > 0.1) |
+                                    (objs["dsaMuons"].good_matched_muons.numMatch/(objs["dsaMuons"].nSegments[:,:,None]) < 0.34) | (ak.is_none(objs["dsaMuons"].good_matched_muons, axis=2)), axis=2),
+    },
 }
 
 preLj_obj_cut_defs = {

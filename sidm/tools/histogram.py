@@ -1,6 +1,6 @@
 """Module to define the Histogram and Axis classes"""
 
-# columnar analysis
+import traceback
 import hist
 import awkward as ak
 
@@ -56,13 +56,15 @@ class Histogram:
         axes = [a.axis for a in self.axes]
         self.hist = hist.Hist(*axes, storage=self.storage)
 
-    def fill(self, objs, evt_weights):
+    def fill(self, objs, evt_weights, verbose=False):
         """Fill associated hist.Hist"""
         # Create fill args, warning user and skipping hists that cannot be filled
         try:
             fill_args = {a.name: a.fill_func(objs, self.evt_mask(objs)) for a in self.axes}
         except (AttributeError, KeyError, ValueError) as e:
-            print(f"Warning: a histogram with the name {self.name} could not be filled and will be skipped")
+            print(f"Warning: the fill function of a histogram with the name {self.name} could not be evaluated and will be skipped")
+            if verbose:
+                print(traceback.format_exc())
             return
 
         # Use last axis to define weight structure to avoid channels axis
