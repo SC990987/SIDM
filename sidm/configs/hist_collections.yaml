@@ -73,9 +73,6 @@ muon_base: &muon_base
   - "muon_dxy_XXLowRange"
   - "muon_dxy_XLowRange"
   - "muon_dxy_lowRange"
-  - "muon_numOverlapSegments_matchedDSAMuons"
-  - "muon_numOverlapSegments_goodMatchedDSAMuons"
-  - "mJJ"
 
 dsaMuon_base: &dsaMuon_base
   - "dsaMuon_n"
@@ -824,5 +821,3 @@ Muon_selection_bkg_base: &Muon_selection_bkg_base
   - "mu_lj_pt"
   - "mulj_egmlj_invmass"
   - "mu_lj_isolation"
-
-

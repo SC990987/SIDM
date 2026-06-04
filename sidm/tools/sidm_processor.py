@@ -10,7 +10,7 @@ from coffea.nanoevents.methods import vector as cvec
 import awkward as ak
 import fastjet
 import vector
-# local
+#local
 from sidm import BASE_DIR
 from sidm.tools import selection, cutflow, utilities
 from sidm.definitions.hists import hist_defs, counter_defs
@@ -32,6 +32,33 @@ def _patched_local2global(stack):
 
     stack.append(out)
 tr.local2global = _patched_local2global
+
+class _AwkwardColumnAccumulator(processor.AccumulatorABC):
+    """Accumulator that concatenates per-chunk awkward arrays.
+
+    Used only for the optional debug output. Each chunk contributes one awkward
+    array; chunks are stored by reference and concatenated lazily when `.value`
+    is accessed, which keeps accumulation memory-efficient and avoids converting
+    columns to Python lists.
+    """
+
+    def __init__(self, chunks=None):
+        self._chunks = list(chunks) if chunks is not None else []
+
+    def identity(self):
+        return _AwkwardColumnAccumulator()
+
+    def add(self, other):
+        self._chunks.extend(other._chunks)
+        return self
+
+    @property
+    def value(self):
+        if not self._chunks:
+            return ak.Array([])
+        if len(self._chunks) == 1:
+            return self._chunks[0]
+        return ak.concatenate(self._chunks)
 
 class SidmProcessor(processor.ProcessorABC):
     """Class to apply selections, make histograms, and make cutflows
@@ -65,26 +92,21 @@ class SidmProcessor(processor.ProcessorABC):
         self.obj_defs = preLj_objs
         self.postLj_objs = postLj_objs
         self.postLj_objs_MC = postLj_objs_MC
-        self.postLj_objs = postLj_objs
-        self.postLj_objs_MC = postLj_objs_MC
         self.verbose = verbose
 
-        # Optional debug output.
+        # Optional debug output. Disabled by default, no effect on the standard
+        # output. When debug=True, an additional out["debug"] dict is added:
         #
-        # This does not change the standard main-branch processor output.
-        # If debug=True, an additional out["debug"] dictionary is added.
+        #     out["debug"][lj_reco][channel][branch_name]  -> _AwkwardColumnAccumulator
+        #     read with: output[dataset]["debug"]["0.4"][channel]["name"].value
         #
-        # Users can add their own arrays with:
+        # apply_evt_cuts already filters sel_objs to the events passing the event
+        # selection, so branches that read sel_objs are over selected events;
+        # branches that read raw `events` (e.g. gen weights) stay full-chunk.
         #
-        # extra_debug_branches = {
-        #     "my_array_name": lambda sel_objs, events: sel_objs["ljs"][:, 0].pt,
-        # }
-        #
-        # processor = SidmProcessor(
-        #     ...,
-        #     debug=True,
-        #     debug_branches=extra_debug_branches,
-        # )
+        # Supply analysis-specific branches via debug_branches, e.g.:
+        #     SidmProcessor(..., debug=True, debug_branches=sidm_debug_branches(),
+        #                   include_default_debug_branches=False)
         self.debug = debug
         self.debug_suppress_failures = debug_suppress_failures
 
@@ -111,10 +133,6 @@ class SidmProcessor(processor.ProcessorABC):
             # pt order
             objs[obj_name] = self.order(objs[obj_name])
 
-            # use nanoevents.Muon behaviors for dsa muons
-            if obj_name == "dsaMuons":
-                forms = {f: objs[obj_name][f] for f in objs[obj_name].fields}
-                objs[obj_name] = ak.zip(forms, with_name="Muon", behavior=nanoaod.behavior)
 
             # add lxy attribute to particles with children
             if hasattr(obj, "children"):
@@ -139,14 +157,7 @@ class SidmProcessor(processor.ProcessorABC):
         hists = self.build_histograms()
 
         # define pre-lj object, lj, post-lj obj, and event cuts per channel
-        # define pre-lj object, lj, post-lj obj, and event cuts per channel
         ch_cuts = self.build_cuts()
-
-        # define event weights
-        if not is_data:
-            evt_weights = self.obj_defs["weight"](events)
-        else:
-            evt_weights = ak.broadcast_arrays(1.0, self.obj_defs["met"](events))[0]
 
         # define event weights
         if not is_data:
@@ -158,7 +169,6 @@ class SidmProcessor(processor.ProcessorABC):
         for channel, cuts in ch_cuts.items():
             obj_selection = selection.JaggedSelection(cuts["obj"], self.verbose)
             nested_selection = selection.NestedSelection(cuts["obj"], self.verbose)
-            nested_selection = selection.NestedSelection(cuts["obj"], self.verbose)
 
             for lj_reco in self.lj_reco_choices:
                 sel_objs = objs.copy()
@@ -169,7 +179,6 @@ class SidmProcessor(processor.ProcessorABC):
                 sel_objs["muons"]["good_matched_dsa_muons"] = nested_selection.apply_obj_cuts(sel_objs, ak.drop_none(sel_objs["muons"].matched_dsa_muons), "dsaMuons")
 
                 # apply pre-LJ object selection
-                sel_objs = obj_selection.apply_obj_cuts(sel_objs)
                 sel_objs = obj_selection.apply_obj_cuts(sel_objs)
 
                 # reconstruct lepton jets
@@ -184,10 +193,6 @@ class SidmProcessor(processor.ProcessorABC):
                     self.postLj_objs = {**self.postLj_objs, **self.postLj_objs_MC}
                 for obj in self.postLj_objs:
                     sel_objs[obj] = self.postLj_objs[obj](sel_objs)
-                if not is_data:
-                    self.postLj_objs = {**self.postLj_objs, **self.postLj_objs_MC}
-                for obj in self.postLj_objs:
-                    sel_objs[obj] = self.postLj_objs[obj](sel_objs)
 
                 # apply post-lj obj selection
                 postLj_selection = selection.JaggedSelection(cuts["postLj_obj"], self.verbose)
@@ -195,46 +200,36 @@ class SidmProcessor(processor.ProcessorABC):
  
                 # build Selection objects and apply event selection
                 sel_objs["evt_weights"] = evt_weights
-                sel_objs["evt_weights"] = evt_weights
                 evt_selection = selection.Selection(cuts["evt"], self.verbose)
                 sel_objs = evt_selection.apply_evt_cuts(sel_objs)
 
-                # Optional debug output.
-                #
-                # This is the only addition to the main processing loop.
-                # It saves arrays after the event selection has been applied.
+                # optional debug output (no effect unless debug=True).
+                # apply_evt_cuts has already trimmed sel_objs to events passing the
+                # event selection, so branches that read sel_objs are over selected
+                # events; branches that read raw `events` stay full-chunk.
                 if self.debug:
                     lj_reco_key = str(lj_reco)
                     if lj_reco_key not in debug_output:
                         debug_output[lj_reco_key] = {}
                     debug_output[lj_reco_key][channel] = self.fill_debug_branches(
-                        sel_objs,
-                        events,
+                        sel_objs, events
                     )
 
                 # fill all hists
 
                 # fixme: disable cutflows due to sequential event cut implementation
                 # store cutflow in separate dict
-
-                # fixme: disable cutflows due to sequential event cut implementation
-                # store cutflow in separate dict
                 if lj_reco not in cutflows:
                     cutflows[str(lj_reco)] = {}
-                cutflows[str(lj_reco)][channel] = evt_selection.cutflow
                 cutflows[str(lj_reco)][channel] = evt_selection.cutflow
 
                 # fill histograms for this channel+lj_reco pair
                 sel_objs["ch"] = channel
                 sel_objs["lj_reco"] = lj_reco
                 hist_weights = sel_objs["evt_weights"]
-                sel_objs["ch"] = channel
-                sel_objs["lj_reco"] = lj_reco
-                hist_weights = sel_objs["evt_weights"]
                 if self.unweighted_hist:
-                    hist_weights = ak.ones_like(hist_weights)
+                    hist_weights =  ak.ones_like(hist_weights)
                 for h in hists.values():
-                    h.fill(sel_objs, hist_weights, self.verbose)
                     h.fill(sel_objs, hist_weights, self.verbose)
 
                 # Fill counters
@@ -250,13 +245,12 @@ class SidmProcessor(processor.ProcessorABC):
 
         # lose lj_reco dimension to cutflows if only one reco was run
         # fixme: disable cutflows due to sequential event cut implemention
-        # fixme: disable cutflows due to sequential event cut implemention
         if len(self.lj_reco_choices) == 1:
             cutflows = cutflows[self.lj_reco_choices[0]]
 
         out = {
             "cutflow": cutflows,
-            "hists": {n: h.hist for n, h in hists.items()},  # output hist.Hists, not Histograms
+            "hists": {n: h.hist for n, h in hists.items()}, # output hist.Hists, not Histograms
             "counters": counters,
             "metadata": {
                 "n_evts": events.metadata["entrystop"] - events.metadata["entrystart"],
@@ -267,15 +261,7 @@ class SidmProcessor(processor.ProcessorABC):
             },
         }
 
-        # Optional debug output.
-        #
-        # This preserves the normal main-branch return shape and only adds one extra key.
-        if self.debug:
-            out["debug"] = debug_output
-
-        # Optional debug output.
-        #
-        # This preserves the normal main-branch return shape and only adds one extra key.
+        # optional debug output: keep the standard return shape, add one key
         if self.debug:
             out["debug"] = debug_output
 
@@ -283,142 +269,57 @@ class SidmProcessor(processor.ProcessorABC):
 
     @staticmethod
     def default_debug_branches():
-        """Default debug arrays.
+        """Minimal, analysis-agnostic debug branches.
 
-        Each entry maps:
-
-            output_name -> function(sel_objs, events)
-
-        The function should return an awkward array, numpy array, list, or scalar.
-        It will be converted with ak.to_list before being written to the output.
-
-        To add more arrays without editing the processor internals, pass:
-
-            debug_branches={
-                "new_array": lambda sel_objs, events: sel_objs["ljs"][:, 0].pt,
-            }
-
-        to SidmProcessor(..., debug=True, debug_branches=debug_branches).
+        passing_weights reads sel_objs, so it is over selected events.
+        gen_weights reads raw events, so it stays full-chunk (useful for scaling);
+        it is skipped on data (no Generator) when debug_suppress_failures=True.
+        Anything analysis-specific should be supplied via debug_branches.
         """
-
         return {
-            # Muon-EGM LJ ABCD variables
-            "mu_lj_iso": lambda sel_objs, events: sel_objs["mu_ljs"][:, 0].isolation,
-            "egm_lj_iso": lambda sel_objs, events: sel_objs["egm_ljs"][:, 0].isolation,
-            "dPhi": lambda sel_objs, events: abs(
-                sel_objs["mu_ljs"][:, 0].delta_phi(sel_objs["egm_ljs"][:, 0])
-            ),
-            "mJJ": lambda sel_objs, events: (
-                sel_objs["mu_ljs"][:, 0] + sel_objs["egm_ljs"][:, 0]
-            ).mass,
-            "dR": lambda sel_objs, events: abs(
-                sel_objs["mu_ljs"][:, 0].delta_r(sel_objs["egm_ljs"][:, 0])
-            ),
-            "deltaEta": lambda sel_objs, events: abs(
-                sel_objs["mu_ljs"][:, 0].eta - sel_objs["egm_ljs"][:, 0].eta
-            ),
-
-            # Muon LJ details
-            "dsaMu_n": lambda sel_objs, events: sel_objs["mu_ljs"][:, 0].dsaMu_n,
-            "pfMu_n": lambda sel_objs, events: sel_objs["mu_ljs"][:, 0].pfMu_n,
-            "mu_lj_min_dxy": lambda sel_objs, events: ak.min(
-                abs(sel_objs["mu_ljs"][:, 0].muons.dxy),
-                axis=-1,
-            ),
-            "mu_lj_max_dxy": lambda sel_objs, events: ak.max(
-                abs(sel_objs["mu_ljs"][:, 0].muons.dxy),
-                axis=-1,
-            ),
-            "pixelHits": lambda sel_objs, events: ak.max(
-                sel_objs["mu_ljs"][:, 0].pfMuons.trkNumPixelHits,
-                axis=-1,
-            ),
-            "trkHits": lambda sel_objs, events: ak.max(
-                sel_objs["mu_ljs"][:, 0].pfMuons.trkNumTrkLayers,
-                axis=-1,
-            ),
-
-            # Muon LJ kinematics
-            "mu_lj_pt": lambda sel_objs, events: sel_objs["mu_ljs"][:, 0].pt,
-            "mu_lj_eta": lambda sel_objs, events: sel_objs["mu_ljs"][:, 0].eta,
-            "mu_lj_phi": lambda sel_objs, events: sel_objs["mu_ljs"][:, 0].phi,
-
-            # EGM LJ kinematics
-            "egm_lj_pt": lambda sel_objs, events: sel_objs["egm_ljs"][:, 0].pt,
-            "egm_lj_eta": lambda sel_objs, events: sel_objs["egm_ljs"][:, 0].eta,
-            "egm_lj_phi": lambda sel_objs, events: sel_objs["egm_ljs"][:, 0].phi,
-
-            # Generic leading/subleading LJ variables
-            "leading_lj_isolation": lambda sel_objs, events: sel_objs["ljs"][:, 0].isolation,
-            "subleading_lj_isolation": lambda sel_objs, events: sel_objs["ljs"][:, 1].isolation,
-            "4mu_dPhi": lambda sel_objs, events: abs(
-                sel_objs["ljs"][:, 0].delta_phi(sel_objs["ljs"][:, 1])
-            ),
-            "4mu_mJJ": lambda sel_objs, events: (
-                sel_objs["ljs"][:, 0] + sel_objs["ljs"][:, 1]
-            ).mass,
-
-            # Leading generic LJ constituent counts
-            "Leading_pfMu_n": lambda sel_objs, events: sel_objs["ljs"][:, 0].pfMu_n,
-            "Leading_dsaMu_n": lambda sel_objs, events: sel_objs["ljs"][:, 0].dsaMu_n,
-            "Leading_pixelHits": lambda sel_objs, events: ak.max(
-                sel_objs["ljs"][:, 0].pfMuons.trkNumPixelHits,
-                axis=-1,
-            ),
-
-            # Subleading generic LJ constituent counts
-            "SubLeading_pfMu_n": lambda sel_objs, events: sel_objs["ljs"][:, 1].pfMu_n,
-            "SubLeading_dsaMu_n": lambda sel_objs, events: sel_objs["ljs"][:, 1].dsaMu_n,
-            "SubLeading_pixelHits": lambda sel_objs, events: ak.max(
-                sel_objs["ljs"][:, 1].pfMuons.trkNumPixelHits,
-                axis=-1,
-            ),
-
-            # Weights
             "passing_weights": lambda sel_objs, events: sel_objs["evt_weights"],
-
-            # Generator weights.
-            # This will naturally fail for data unless available, and will be skipped
-            # when debug_suppress_failures=True.
-            "gen_weights": lambda sel_objs, events: events.Generator.weight,
+            "gen_weights": lambda sel_objs, events: (
+                events.Generator.weight if hasattr(events, "Generator") else ak.Array([])
+            ),
         }
 
     def fill_debug_branches(self, sel_objs, events):
-        """Fill all configured debug branches.
+        """Evaluate all registered debug branches for one channel + lj_reco pair.
 
-        This method is intentionally generic. The processor does not need to know
-        what arrays users want to save. Users only need to provide a dictionary of
-        branch functions through debug_branches.
+        apply_evt_cuts has already trimmed sel_objs to the events passing the full
+        event selection, so branches reading sel_objs are automatically over
+        selected events; branches reading raw `events` (e.g. generator weights)
+        remain full-chunk. Each branch is wrapped in its own try/except so one
+        failing branch does not abort the job (unless debug_suppress_failures is
+        False). Results are stored as awkward arrays in an accumulator that
+        concatenates across chunks.
         """
-
         debug = {}
-
         for name, branch_func in self.debug_branches.items():
             try:
-                debug[name] = self.to_debug_list(branch_func(sel_objs, events))
+                value = self._to_debug_array(branch_func(sel_objs, events))
+                debug[name] = _AwkwardColumnAccumulator([value])
             except Exception as e:
                 if not self.debug_suppress_failures:
                     raise
                 print(f"Warning: cannot fill debug branch {name}. Skipping. Error: {e}")
-                debug[name] = []
-
+                debug[name] = _AwkwardColumnAccumulator()
         return debug
 
-    def to_debug_list(self, value):
-        """Convert awkward/numpy/list/scalar values into a serializable debug value."""
+    @staticmethod
+    def _to_debug_array(value):
+        """Coerce a branch result into an awkward array.
 
+        Awkward arrays are kept as-is (preserving option types from ak.firsts and
+        avoiding the memory cost of Python lists). numpy arrays and Python lists
+        are wrapped directly; a bare scalar becomes a length-1 array.
+        """
+        if isinstance(value, ak.Array):
+            return value
         try:
-            return ak.to_list(value)
-        except Exception:
-            pass
-
-        if isinstance(value, np.ndarray):
-            return value.tolist()
-
-        if isinstance(value, tuple):
-            return list(value)
-
-        return value
+            return ak.Array(value)
+        except (ValueError, TypeError):
+            return ak.Array([value])
 
     def make_vector(self, objs, collection, fields, type_id=None, mass=None):
         shape = ak.ones_like(objs[collection].pt, dtype=np.dtype(int))
@@ -470,14 +371,12 @@ class SidmProcessor(processor.ProcessorABC):
 
         # turn lepton jets back into LorentzVectors that match existing structures
         ljs = ak.zip(
-            {
-                "x": jets.x,
-                "y": jets.y,
-                "z": jets.z,
-                "t": jets.t,
-            },
+            {"x": jets.x,
+             "y": jets.y,
+             "z": jets.z,
+             "t": jets.t},
             with_name="LorentzVector",
-            behavior=nanoaod.behavior,
+            behavior=nanoaod.behavior
         )
 
         # add fields to access LJ constituents
@@ -530,20 +429,14 @@ class SidmProcessor(processor.ProcessorABC):
         # a) for each constituent, find the dR between it and all other constituents in the same LJ
         # b) flatten that into a list of dRs per LJ
         # c) and then take the maximum dR per LJ, leaving us with a single value per LJ
-        ljs["dRSpread"] = ak.max(
-            ak.flatten(
-                ljs["constituents"].metric_table(ljs["constituents"], axis=2),
-                axis=-1,
-            ),
-            axis=-1,
-        )
+        ljs["dRSpread"] = ak.max(ak.flatten(
+            ljs["constituents"].metric_table(ljs["constituents"], axis=2), axis=-1), axis=-1)
 
         # LJ isolation
         ljs["matched_jet"] = ljs.nearest(objs["jets"], threshold=0.4)       
         ljs["lepton_fraction"] =  ljs["matched_jet"].chEmEF + ljs["matched_jet"].neEmEF + ljs["matched_jet"].muEF
         ljs["isolation"] = ak.fill_none((ljs["matched_jet"].energy / ljs.energy) * (1 - (ljs["lepton_fraction"])), 0)
         ljs["dR_matched_jet"] = ljs.delta_r(ljs["matched_jet"])
-
 
         # todo: add LJ displacement
 
@@ -593,18 +486,15 @@ class SidmProcessor(processor.ProcessorABC):
     def build_histograms(self):
         """Create dictionary of Histogram objects"""
         hist_menu = utilities.load_yaml(f"{BASE_DIR}/{self.histograms_cfg}")
-
         # build dictionary and create hist.Hist objects
         hists = {}
         for collection in self.hist_collection_names:
             collection = utilities.flatten(hist_menu[collection])
             for hist_name in collection:
                 hists[hist_name] = copy.deepcopy(hist_defs[hist_name])
-
                 # Add lj_reco axis only when more than one reco is run
                 lj_reco_names = self.lj_reco_choices if len(self.lj_reco_choices) > 1 else None
                 hists[hist_name].make_hist(hist_name, self.channel_names, lj_reco_names)
-
         return hists
 
     def order(self, obj):
@@ -612,7 +502,6 @@ class SidmProcessor(processor.ProcessorABC):
         # pt order objects with a pt attribute
         if hasattr(obj, "pt"):
             obj = obj[ak.argsort(obj.pt, ascending=False)]
-
         # fixme: would be good to explicitly order other objects as well
         return obj
 
@@ -634,7 +523,6 @@ class SidmProcessor(processor.ProcessorABC):
             lumixs_weight = utilities.get_lumixs_weight(sample, year, sum_weights)
             for name in output["cutflow"]:
                 accumulator[sample]["cutflow"][name].scale(lumixs_weight)
-
             if not self.unweighted_hist:
                 for name in output["hists"]:
                     accumulator[sample]["hists"][name] *= lumixs_weight
