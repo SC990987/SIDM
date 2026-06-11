@@ -260,4 +260,32 @@ evt_cut_defs = {
     "= 1 muLJs": lambda objs: (ak.num(objs["mu_ljs"]) == 1) & (ak.num(objs["egm_ljs"]) == 0),
     "= 1 egmLJs": lambda objs: (ak.num(objs["mu_ljs"]) == 0) & (ak.num(objs["egm_ljs"]) == 1),
     "all cos_alpha(dsa, dsa) > -0.9": lambda objs: ak.all(cosAlpha(objs["dsaMuons"]) > -0.9, axis=1),
+    # ---- ABCD event-level cuts: leading mu-LJ + leading egm-LJ ----
+    # mu0 = ak.firsts(mu_ljs), egm0 = ak.firsts(egm_ljs)  (same as debug branches)
+    # ak.fill_none(..., False) -> events missing the LJ fail the cut instead of erroring.
+
+    "dPhi(muLJ, egmLJ) >= 2.0": lambda objs: ak.fill_none(
+        abs(ak.firsts(objs["mu_ljs"]).delta_phi(ak.firsts(objs["egm_ljs"]))) >= 2.0, False),
+
+    "mJJ >= 150 GeV": lambda objs: ak.fill_none(
+        (ak.firsts(objs["mu_ljs"]) + ak.firsts(objs["egm_ljs"])).mass >= 150, False),
+
+    "mu_lj_iso <= 0.25": lambda objs: ak.fill_none(
+        ak.firsts(objs["mu_ljs"]).isolation <= 0.1, False),
+
+    "egm_lj_iso <= 0.1": lambda objs: ak.fill_none(
+        ak.firsts(objs["egm_ljs"]).isolation <= 0.2, False),
+
+    # displacement: if leading mu-LJ has a PF muon, require max pixelHits <= cut;
+    # otherwise require it to contain a DSA muon. (= notebook's np.where logic)
+    "muLJ displaced (pixelHits <= 3)": lambda objs: ak.where(
+        ak.fill_none(ak.firsts(objs["mu_ljs"]).pfMu_n >= 1, False),
+        ak.fill_none(ak.max(ak.firsts(objs["mu_ljs"]).pfMuons.trkNumPixelHits, axis=-1) <= 3, False),
+        ak.fill_none(ak.firsts(objs["mu_ljs"]).dsaMu_n >= 1, False),
+    ),
+    # inverted isolation cuts (exact complements) for ABCD regions B/C/D
+    "mu_lj_iso > 0.25": lambda objs: ak.fill_none(
+        ak.firsts(objs["mu_ljs"]).isolation > 0.1, False),
+    "egm_lj_iso > 0.1": lambda objs: ak.fill_none(
+        ak.firsts(objs["egm_ljs"]).isolation > 0.2, False),
 }

@@ -291,7 +291,7 @@ isolation_base: &isolation_base
   - "photon_lj_isolation"
   - "photon_lj_isolation_zoom"
 
-abcd_base: &abcd_base
+abcd_base_legacy: &abcd_base_legacy
   - "lj_lj_absdphi_invmass"
   - "lj_lj_absdphi_absdR"
   - "lj_lj_absdphi_absdeta"
@@ -302,6 +302,22 @@ abcd_base: &abcd_base
   - "lj_lj_absdphi_ptRatio"
   - "lj_lj_absdR_ptRatio"
   - "lj_lj_absdeta_ptRatio"
+
+abcd_base: &abcd_base
+  - "egm_lj_iso"
+  - "mu_lj_iso"
+  - "mu_lj_pt"
+  - "egm_lj_pt"
+  - "pf_mu_lj_pfMuon_min_trkNumPixelHits"
+  - "mu_lj_pfMu_n"
+  - "mu_lj_dsaMu_n"
+  - "mu_lj_egm_lj_absdeta"
+  - "mu_lj_egm_lj_dR"
+  - "mu_lj_eta"
+  - "egm_lj_eta"
+  - "mu_lj_phi"
+  - "egm_lj_phi"
+  - "mu_lj_iso_egm_lj_iso_2D"
 
 genBS_genA_kinematics: &genBS_genA_kinematics
   - "genBS_pt"
@@ -821,5 +837,6 @@ Muon_selection_bkg_base: &Muon_selection_bkg_base
   - "mu_lj_pt"
   - "mulj_egmlj_invmass"
   - "mu_lj_isolation"
+
 
 

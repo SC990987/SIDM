@@ -4279,5 +4279,50 @@ hist_defs = {
         ],
         evt_mask=lambda objs: ak.num(objs["genEs_fromA"]) >= 2,
     ),
-    
+    "mu_lj_egm_lj_absdeta": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, 0, 6, name=r"|$\Delta \eta$| ($\mu$-LJ, $e\gamma$-LJ)"),
+                   lambda objs, mask: abs(ak.firsts(objs["mu_ljs"]).eta - ak.firsts(objs["egm_ljs"]).eta)),
+        ],
+    ),
+    "mu_lj_egm_lj_dR": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, 0, 6, name=r"|$\Delta R$| ($\mu$-LJ, $e\gamma$-LJ)"),
+                   lambda objs, mask: ak.firsts(objs["mu_ljs"]).delta_r(ak.firsts(objs["egm_ljs"]))),
+        ],
+    ),
+    "mu_lj_eta": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, -3, 3, name=r"|$\eta$| ($\mu$-LJ)"),
+                   lambda objs, mask: ak.firsts(objs["mu_ljs"]).eta),
+        ],
+    ),
+    "egm_lj_eta": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, -3, 3, name=r"|$\eta$| ($e\gamma$-LJ)"),
+                   lambda objs, mask: ak.firsts(objs["egm_ljs"]).eta),
+        ],
+    ),
+    "mu_lj_phi": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, -3.2, 3.2, name=r"|$\phi$| ($\mu$-LJ)"),
+                   lambda objs, mask: ak.firsts(objs["mu_ljs"]).phi),
+        ],
+    ),
+    "egm_lj_phi": h.Histogram(
+        [
+            h.Axis(hist.axis.Regular(50, -3.2, 3.2, name=r"|$\phi$| ($e\gamma$-LJ)"),
+                   lambda objs, mask: ak.firsts(objs["egm_ljs"]).phi),
+        ],
+    ),
+    "mu_lj_iso_egm_lj_iso_2D": h.Histogram(
+        [  # lxy of dark photon that decays to electrons
+            h.Axis(hist.axis.Regular(50, 0, 0.8, name="mu_lj_iso",
+                                     label=r"$\mu$-LJ Iso"),
+                   lambda objs, mask: ak.firsts(objs["mu_ljs"]).isolation),
+            h.Axis(hist.axis.Regular(50, 0, 0.8, name="egm_lj_iso",
+                                     label=r"$e\gamma$-LJ Iso"),
+                   lambda objs, mask: ak.firsts(objs["egm_ljs"]).isolation),
+        ],
+    ),
 }
