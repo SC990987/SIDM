@@ -259,6 +259,9 @@ evt_cut_defs = {
     "= 1 LJs": lambda objs: ak.num(objs["ljs"]) == 1,
     "= 1 muLJs": lambda objs: (ak.num(objs["mu_ljs"]) == 1) & (ak.num(objs["egm_ljs"]) == 0),
     "= 1 egmLJs": lambda objs: (ak.num(objs["mu_ljs"]) == 0) & (ak.num(objs["egm_ljs"]) == 1),
+    "= 2 LJs": lambda objs: ak.num(objs["ljs"]) == 2,
+    "= 1 muLJs and = 1 egmLJs": lambda objs: (ak.num(objs["mu_ljs"]) == 1) & (ak.num(objs["egm_ljs"]) == 1),
+    "= 2 muLJs": lambda objs: (ak.num(objs["mu_ljs"]) == 2) & (ak.num(objs["egm_ljs"]) == 0),
     "all cos_alpha(dsa, dsa) > -0.9": lambda objs: ak.all(cosAlpha(objs["dsaMuons"]) > -0.9, axis=1),
     # ---- ABCD event-level cuts: leading mu-LJ + leading egm-LJ ----
     # mu0 = ak.firsts(mu_ljs), egm0 = ak.firsts(egm_ljs)  (same as debug branches)

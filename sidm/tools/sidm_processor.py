@@ -33,6 +33,33 @@ def _patched_local2global(stack):
     stack.append(out)
 tr.local2global = _patched_local2global
 
+class _AwkwardColumnAccumulator(processor.AccumulatorABC):
+    """Accumulator that concatenates per-chunk awkward arrays.
+
+    Used only for the optional debug output. Each chunk contributes one awkward
+    array; chunks are stored by reference and concatenated lazily when `.value`
+    is accessed, which keeps accumulation memory-efficient and avoids converting
+    columns to Python lists.
+    """
+
+    def __init__(self, chunks=None):
+        self._chunks = list(chunks) if chunks is not None else []
+
+    def identity(self):
+        return _AwkwardColumnAccumulator()
+
+    def add(self, other):
+        self._chunks.extend(other._chunks)
+        return self
+
+    @property
+    def value(self):
+        if not self._chunks:
+            return ak.Array([])
+        if len(self._chunks) == 1:
+            return self._chunks[0]
+        return ak.concatenate(self._chunks)
+
 class SidmProcessor(processor.ProcessorABC):
     """Class to apply selections, make histograms, and make cutflows
 
