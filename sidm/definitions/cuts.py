@@ -291,4 +291,7 @@ evt_cut_defs = {
         ak.firsts(objs["mu_ljs"]).isolation > 0.1, False),
     "egm_lj_iso > 0.1": lambda objs: ak.fill_none(
         ak.firsts(objs["egm_ljs"]).isolation > 0.2, False),
+
+    "mJJ < 150 GeV": lambda objs: ak.fill_none(
+        (ak.firsts(objs["mu_ljs"]) + ak.firsts(objs["egm_ljs"])).mass < 150, False),
 }

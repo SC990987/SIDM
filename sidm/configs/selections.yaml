@@ -1886,3 +1886,12 @@ data_control_region_2muLj_cosmic_veto: &data_control_region_2muLj_cosmic_veto
   evt_cuts:
     - *evt_baseNoLj
     - "2mu2e"
+
+2mu2e_abcd_presel_lowMass: &2mu2e_abcd_presel_lowMass
+  <<: *base
+  evt_cuts: &evt_2mu2e_abcd_presel_lowMass
+    - *evt_baseNoLj
+    - "2mu2e"
+    - "dPhi(muLJ, egmLJ) >= 2.0"
+    - "mJJ < 150 GeV"
+    - "muLJ displaced (pixelHits <= 3)"

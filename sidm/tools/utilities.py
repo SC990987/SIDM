@@ -13,6 +13,11 @@ import hist.intervals
 from sidm import BASE_DIR
 import coffea.util
 from coffea.processor import accumulate
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+
 
 def print_list(l):
     """Print one list element per line"""
@@ -1170,6 +1175,147 @@ def plot_data_mc(
         plt.show()
 
     return fig, ax_main, ax_ratio
+
 def get_pairs(obj):
     pairs = ak.combinations(obj, 2, axis=1)
     return (pairs)
+
+def run_cmd(cmd, check=True, verbose=True):
+    if verbose:
+        print("+", " ".join(cmd))
+
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    if verbose and result.stdout.strip():
+        print(result.stdout.strip())
+
+    if verbose and result.stderr.strip():
+        print(result.stderr.strip())
+
+    if check and result.returncode != 0:
+        raise RuntimeError(
+            f"Command failed with exit code {result.returncode}: {' '.join(cmd)}"
+        )
+
+    return result
+
+
+def eos_path_to_url(eos_path, redirector="root://cmseos.fnal.gov"):
+    """
+    Convert an EOS path to an xrootd URL.
+
+    Accepts either:
+      /store/user/...
+    or:
+      root://cmseos.fnal.gov//store/user/...
+    """
+    eos_path = str(eos_path)
+
+    if eos_path.startswith("root://"):
+        return eos_path
+
+    if not eos_path.startswith("/"):
+        raise ValueError(f"EOS path should start with /store/... or root://...: {eos_path}")
+
+    return f"{redirector}/{eos_path}"
+
+
+def xrdcp_from_eos(eos_path, local_path, redirector="root://cmseos.fnal.gov", verbose=True):
+    """
+    Copy one EOS file to a local path.
+    """
+    local_path = Path(local_path)
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    url = eos_path_to_url(eos_path, redirector=redirector)
+
+    run_cmd(
+        ["xrdcp", "-f", url, str(local_path)],
+        check=True,
+        verbose=verbose,
+    )
+
+    return local_path
+
+
+def sum_hist_eos(
+    samples_list,
+    eos_dir,
+    tmpdir=None,
+    redirector="root://cmseos.fnal.gov",
+    verbose=True,
+):
+    """
+    Sum hist dictionaries from .coffea files stored on EOS.
+
+    Expected EOS files:
+        eos_dir/SAMPLE.coffea
+
+    Expected internal structure:
+        output["out"][SAMPLE]["hists"]
+
+    Example:
+        qcd_hists = utilities.sum_hist_eos(
+            qcd_samples,
+            "/store/user/scampbel/sidm_condor/BackgroundMerged_abcd_presel_weighted_v1",
+        )
+    """
+    eos_dir = str(eos_dir).rstrip("/")
+
+    summed_out = None
+
+    # If tmpdir is not provided, use a temporary directory that is removed automatically.
+    if tmpdir is None:
+        with tempfile.TemporaryDirectory(prefix="sum_hist_eos_") as workdir:
+            return sum_hist_eos(
+                samples_list=samples_list,
+                eos_dir=eos_dir,
+                tmpdir=workdir,
+                redirector=redirector,
+                verbose=verbose,
+            )
+
+    tmpdir = Path(tmpdir)
+    tmpdir.mkdir(parents=True, exist_ok=True)
+
+    for sample in samples_list:
+        eos_file = f"{eos_dir}/{sample}.coffea"
+        local_file = tmpdir / f"{sample}.coffea"
+
+        if verbose:
+            print("=" * 80)
+            print(f"Sample: {sample}")
+            print(f"EOS:    {eos_file}")
+            print(f"Local:  {local_file}")
+
+        xrdcp_from_eos(
+            eos_file,
+            local_file,
+            redirector=redirector,
+            verbose=verbose,
+        )
+
+        output = coffea.util.load(local_file)
+
+        if "out" not in output:
+            raise KeyError(f"{sample}.coffea does not have top-level key 'out'")
+
+        if sample not in output["out"]:
+            raise KeyError(
+                f"{sample}.coffea does not contain output['out']['{sample}']. "
+                f"Available keys: {list(output['out'].keys())}"
+            )
+
+        hists = output["out"][sample]["hists"]
+
+        if summed_out is None:
+            summed_out = hists.copy()
+        else:
+            summed_out = accumulate([hists, summed_out])
+
+    return summed_out
