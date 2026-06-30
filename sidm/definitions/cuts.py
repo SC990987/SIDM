@@ -274,10 +274,10 @@ evt_cut_defs = {
         (ak.firsts(objs["mu_ljs"]) + ak.firsts(objs["egm_ljs"])).mass >= 150, False),
 
     "mu_lj_iso <= 0.25": lambda objs: ak.fill_none(
-        ak.firsts(objs["mu_ljs"]).isolation <= 0.1, False),
+        ak.firsts(objs["mu_ljs"]).isolation <= 0.25, False),
 
     "egm_lj_iso <= 0.1": lambda objs: ak.fill_none(
-        ak.firsts(objs["egm_ljs"]).isolation <= 0.2, False),
+        ak.firsts(objs["egm_ljs"]).isolation <= 0.1, False),
 
     # displacement: if leading mu-LJ has a PF muon, require max pixelHits <= cut;
     # otherwise require it to contain a DSA muon. (= notebook's np.where logic)
@@ -288,9 +288,9 @@ evt_cut_defs = {
     ),
     # inverted isolation cuts (exact complements) for ABCD regions B/C/D
     "mu_lj_iso > 0.25": lambda objs: ak.fill_none(
-        ak.firsts(objs["mu_ljs"]).isolation > 0.1, False),
+        ak.firsts(objs["mu_ljs"]).isolation > 0.25, False),
     "egm_lj_iso > 0.1": lambda objs: ak.fill_none(
-        ak.firsts(objs["egm_ljs"]).isolation > 0.2, False),
+        ak.firsts(objs["egm_ljs"]).isolation > 0.1, False),
 
     "mJJ < 150 GeV": lambda objs: ak.fill_none(
         (ak.firsts(objs["mu_ljs"]) + ak.firsts(objs["egm_ljs"])).mass < 150, False),
