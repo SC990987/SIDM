@@ -381,12 +381,41 @@ def lab_ctau(bs, zd, proper_ct, grid_cfg=f"{BASE_DIR}/configs/signal_grid.yaml")
         lab_ct = proper_ct*grid[bs][zd]["labframe_factor"]
     return round_sigfig(lab_ct, digits=2)
 
-def get_xs(dataset, cfg="cross_sections.yaml"):
+
+def get_xs(dataset, cfg="cross_sections.yaml", use_signal_xs=USE_SIGNAL_XS):
+    """Fetch dataset cross section from cfg."""
+    xs_menu = load_yaml(f"{BASE_DIR}/configs/" + cfg)
+
+    try:
+        if dataset.startswith(("2Mu2E", "4Mu")):
+            if use_signal_xs:
+                return xs_menu[dataset]
+            else:
+                print("Ignoring signal cross sections, assuming 1 fb")
+                return 0.001  # pb = 1 fb
+        else:
+            return xs_menu[dataset]
+
+    except KeyError:
+        if dataset.startswith(("2Mu2E", "4Mu")):
+            print("Signal not in xs cfg, assuming 1 fb")
+            return 0.001
+        else:
+            raise
+
+def get_xs(dataset, cfg="cross_sections.yaml", use_signal_xs=False):
     """Fetch dataset xs from cfg"""
     # assume location_cfg is stored in sidm/configs/
     xs_menu = load_yaml(f"{BASE_DIR}/configs/" + cfg)
     try:
-        return xs_menu[dataset]
+        if dataset.startswith(("2Mu2E", "4Mu")):
+            if use_signal_xs:
+                return xs_menu[dataset]
+            else:
+                print("Ignoring signal cross sections, assuming 1 fb")
+                return 0.001
+        else:
+            return xs_menu[dataset]
     except KeyError:
         if dataset.startswith(("2Mu2E", "4Mu")):
             print("Signal not in xs cfg, assuming 1fb")
@@ -1279,3 +1308,15 @@ def plot_data_mc(
 def get_pairs(obj):
     pairs = ak.combinations(obj, 2, axis=1)
     return (pairs)
+
+def muon_pt_resolution(objs, mask):
+    reco_mu = objs["muons"]
+    gen_mu = reco_mu.nearest(objs["genMu"])
+
+    dr = dR(reco_mu, objs["genMu"])
+    matched = dr < 0.5
+
+    return (
+        reco_mu[matched].pt
+        - gen_mu[matched].pt
+    ) / gen_mu[matched].pt
