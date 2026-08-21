@@ -70,7 +70,7 @@ QUANTILE_COLUMNS = {
 # coffea (which that module imports) is not installed.
 # datacard_<channel>_<signal>.txt, e.g. datacard_SR_2mu2e_2Mu2E_1000GeV_1p2GeV_0p96mm.txt
 CARD_NAME = re.compile(
-    r"^datacard_(?P<channel>SR_\w+?)_"
+    r"^datacard_(?P<method>abcd_)?(?P<channel>SR_\w+?)_"
     r"(?P<signal>(?:2Mu2E|4Mu)_[\dp]+GeV_[\dp]+GeV_[\dp]+mm)$"
 )
 SIGNAL_NAME = re.compile(
@@ -78,7 +78,7 @@ SIGNAL_NAME = re.compile(
 )
 
 CSV_COLUMNS = [
-    "datacard", "channel", "signal", "final_state",
+    "datacard", "method", "normalisation", "channel", "signal", "final_state",
     "m_mediator", "m_darkphoton", "ctau",
     "exp_m2", "exp_m1", "exp", "exp_p1", "exp_p2", "obs",
 ]
@@ -88,8 +88,9 @@ def parse_card_name(stem):
     """Pull the channel and signal point out of a datacard filename stem."""
     m = CARD_NAME.match(stem)
     if not m:
-        return {"channel": "", "signal": stem}
-    info = {"channel": m["channel"], "signal": m["signal"]}
+        return {"channel": "", "signal": stem, "method": ""}
+    info = {"channel": m["channel"], "signal": m["signal"],
+            "method": "abcd" if m["method"] else "counting"}
     s = SIGNAL_NAME.match(m["signal"])
     if s:
         num = lambda x: float(x.replace("p", "."))
@@ -102,25 +103,66 @@ def parse_card_name(stem):
     return info
 
 
-def read_rates(card):
-    """Return ``(signal_rate, total_background_rate)`` from a counting datacard.
+def read_normalisation(card):
+    """Whether a card normalises signal to 1 fb or to its theory cross section.
 
-    The cards written by this study put the signal first (Combine process index
-    0) followed by the background groups, all on a single ``rate`` line.
+    Taken from the header comment the writer emits, so the results table says
+    what the card actually did rather than what the output directory implies.
     """
-    process_ids, rates = None, None
+    for line in Path(card).read_text().splitlines():
+        if not line.startswith("#"):
+            break
+        if "theory cross section" in line:
+            return "theory"
+        if "normalised to" in line:
+            return "1fb"
+    return ""
+
+
+def read_rates(card):
+    """Return ``(signal_rate, background_rate)`` for a datacard's signal region.
+
+    For the single-bin counting cards this is just the signal rate and the sum
+    of the background rates.  The four-bin ABCD cards need different handling:
+    their background ``rate`` column is 1 in every bin (the normalisation lives
+    in the rateParams), so the background level has to come from the signal
+    region's ``observation`` instead, and the signal rate has to be picked out
+    of the ``_A`` bin rather than summed over all four.
+    """
+    obs_bins, observations, proc_bins, process_ids, rates = None, None, None, None, None
     for line in Path(card).read_text().splitlines():
         fields = line.split()
         if not fields:
             continue
-        if fields[0] == "process" and all(f.lstrip("-").isdigit() for f in fields[1:]):
-            process_ids = [int(f) for f in fields[1:]]
-        elif fields[0] == "rate":
-            rates = [float(f) for f in fields[1:]]
+        head, rest = fields[0], fields[1:]
+        if head == "bin":
+            if obs_bins is None:
+                obs_bins = rest          # first `bin` line pairs with observation
+            else:
+                proc_bins = rest         # second pairs with the process columns
+        elif head == "observation":
+            observations = [float(f) for f in rest]
+        elif head == "process" and all(f.lstrip("-").isdigit() for f in rest):
+            process_ids = [int(f) for f in rest]
+        elif head == "rate":
+            rates = [float(f) for f in rest]
+
     if process_ids is None or rates is None or len(process_ids) != len(rates):
         return None, None
-    signal = sum(r for i, r in zip(process_ids, rates) if i <= 0)
-    background = sum(r for i, r in zip(process_ids, rates) if i > 0)
+
+    # Single-bin card: no per-bin disambiguation needed.
+    if not obs_bins or len(obs_bins) == 1:
+        signal = sum(r for i, r in zip(process_ids, rates) if i <= 0)
+        background = sum(r for i, r in zip(process_ids, rates) if i > 0)
+        return signal, background
+
+    # Multi-bin ABCD card: work with the signal-region bin only.
+    sr_bin = next((b for b in obs_bins if b.endswith("_A")), obs_bins[0])
+    background = None
+    if observations and len(observations) == len(obs_bins):
+        background = observations[obs_bins.index(sr_bin)]
+    signal = sum(r for b, i, r in zip(proc_bins or [], process_ids, rates)
+                 if b == sr_bin and i <= 0)
     return signal, background
 
 
@@ -241,7 +283,7 @@ def run_one(card, args):
         tail = "\n".join(output.strip().splitlines()[-15:])
         return None, f"{card.name}: no limit found in combine output\n{tail}"
 
-    row = {"datacard": card.name}
+    row = {"datacard": card.name, "normalisation": read_normalisation(card)}
     row.update(parse_card_name(card.stem))
     row.update(limits)
     return row, None
@@ -256,7 +298,8 @@ def load_existing(csv_path):
     out = {}
     for row in rows:
         for key, value in list(row.items()):
-            if key in {"datacard", "channel", "signal", "final_state"}:
+            if key in {"datacard", "method", "normalisation", "channel",
+                       "signal", "final_state"}:
                 continue
             row[key] = float(value) if value not in ("", None) else None
         out[row["datacard"]] = row
@@ -266,7 +309,8 @@ def load_existing(csv_path):
 def write_results(rows, outdir):
     """Write limits.csv and limits.json, sorted for stable diffs."""
     outdir.mkdir(parents=True, exist_ok=True)
-    rows = sorted(rows, key=lambda r: (r.get("channel", ""), r.get("signal", "")))
+    rows = sorted(rows, key=lambda r: (r.get("normalisation", ""), r.get("method", ""),
+                                       r.get("channel", ""), r.get("signal", "")))
 
     csv_path = outdir / "limits.csv"
     with csv_path.open("w", newline="") as f:

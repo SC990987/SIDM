@@ -4,3 +4,14 @@
 '2018':
   lumi: 59830
   golden_json: "Cert_314472-325175_13TeV_Legacy2018_Collisions18_JSON.txt"
+
+# Placeholders for extrapolating yields to a larger dataset, used by
+# limit_plotting's DatacardConfig.target_lumi_pb. Only 2018 is currently
+# processed; the Run 3 numbers below are NOT verified -- fill them in from the
+# official lumi recommendations before using them for anything public.
+#'2022':
+#  lumi: 0000  # /pb -- TODO
+#'2023':
+#  lumi: 0000  # /pb -- TODO
+#'2024':
+#  lumi: 0000  # /pb -- TODO
