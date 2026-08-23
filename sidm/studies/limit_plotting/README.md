@@ -128,7 +128,13 @@ the card's own header rather than the directory name.
   counting card observes while the model predicts `B*C/D`. Setting it to `"prediction"` makes
   the card self-consistent by construction, which cannot show closure tension. Note the blinded
   expected limit is insensitive to this — `--run blind` never reads `observation` — so the
-  effect only appears in `limits_abcd_obs/`, produced with `--unblind`.
+  effect only appears in the `*_obs/` directories, produced with `--unblind`.
+
+* **Unblinded-on-MC runs are closure tests, not limits.** `limits_obs/`, `limits_abcd_obs/` and
+  their theory-normalised twins run the fit against the MC signal-region count standing in for
+  data. The counting card's observation equals its background by construction, so only the ABCD
+  card can show tension. Blinded, ABCD looks 3–5x stronger than counting; observed, it is
+  1.1–1.3x *weaker*, and both exclude the same 32/120 points.
 
 * **The MC cannot test ABCD closure.** `B*C/D` and the MC region-A count differ by under
   1 sigma in both channels (0.89 and 0.99), with 45–111% uncertainties. The test has no
