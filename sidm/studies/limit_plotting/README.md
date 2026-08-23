@@ -123,11 +123,19 @@ the card's own header rather than the directory name.
   is why the counting cards carry a `gmN` nuisance rather than a log-normal. When the
   data-driven prediction exists, substitute it for the MC rate.
 
+* **The ABCD card observes the MC region-A count.** `DatacardConfig.abcd_observation`
+  defaults to `"mc"`, so the four-bin card's `observation` in region A is the same number the
+  counting card observes while the model predicts `B*C/D`. Setting it to `"prediction"` makes
+  the card self-consistent by construction, which cannot show closure tension. Note the blinded
+  expected limit is insensitive to this — `--run blind` never reads `observation` — so the
+  effect only appears in `limits_abcd_obs/`, produced with `--unblind`.
+
 * **The MC cannot test ABCD closure.** `B*C/D` and the MC region-A count differ by under
   1 sigma in both channels (0.89 and 0.99), with 45–111% uncertainties. The test has no
   statistical power. In particular, the ABCD cards give limits 3–5x stronger than the counting
   cards only because `B*C/D` happens to land below the MC region-A count — a fluctuation, not
-  a gain in sensitivity. Do not quote the improvement.
+  a gain in sensitivity. Do not quote the improvement. Confronted with the MC count as data the
+  ABCD exclusion drops from 42/120 to 32/120, close to the counting result of 28/120.
 
 * **Signal contaminates the control regions.** 19/120 points exceed 10% contamination in some
   control region at the 1 fb reference (32/120 at theory cross sections), concentrated in

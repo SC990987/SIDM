@@ -378,6 +378,13 @@ class DatacardConfig:
     # cross_sections.yaml, so r is directly sigma_limit/sigma_theory and r < 1
     # means the point is excluded.
     use_theory_xs: bool = False
+    # What goes on the ABCD card's `observation` line for region A.
+    # "mc"         -- the MC region-A count, so the card's data is the same as the
+    #                 counting card's and any B*C/D non-closure shows up in the fit
+    #                 as tension between the signal region and the control regions.
+    # "prediction" -- the B*C/D value itself, which is self-consistent by
+    #                 construction and therefore cannot show closure tension.
+    abcd_observation: str = "mc"
     signal_unc: float | None = None
     bkg_norm_unc: float | None = None
     mc_stat: str | None = "gmN"
@@ -651,14 +658,17 @@ def build_abcd_datacard(signal_name, signal_regions, bkg_regions, channel_name,
     pad = 34
 
     obs = {r: bkg_rate[r].value for r in regions}
-    obs[SR_ABCD_REGION] = predicted_a  # blinded: A is the prediction, not MC A
+    if config.abcd_observation == "prediction":
+        # self-consistent by construction: observation equals what the model predicts
+        obs[SR_ABCD_REGION] = predicted_a
 
     lines = [
         f"# SIDM ABCD datacard -- {signal_name}, {channel_name}",
         f"# selection {CHANNELS[channel_name].selection}",
         f"# 4 bins = ABCD regions; background in A is bNorm*cNorm/dNorm",
         _norm_comment(signal_name, config),
-        f"# MC region A = {bkg_rate[0].value:.4g}, B*C/D = {predicted_a:.4g}",
+        f"# MC region A = {bkg_rate[0].value:.4g}, B*C/D = {predicted_a:.4g}"
+        f"  (observation in A: {config.abcd_observation})",
         f"imax {len(bins)}  number of bins",
         "jmax 1  number of background processes",
         "kmax *  number of nuisance parameters",
