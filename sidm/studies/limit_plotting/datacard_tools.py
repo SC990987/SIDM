@@ -26,10 +26,16 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
+import getpass
+import platform
+import socket
+from datetime import datetime, timezone
+
 import hist
+import yaml
 from coffea.util import load
 
 from sidm import BASE_DIR
@@ -37,14 +43,66 @@ from sidm import BASE_DIR
 # --------------------------------------------------------------------------- #
 # Sample locations and channel definitions
 # --------------------------------------------------------------------------- #
-BKG_DIR = (
-    "/eos/uscms/store/user/dlee3/sidm_condor/ABCD_cosmic_veto/"
-    "ABCD_landing_10ch_cosmic_veto_v1_bkg_full_merged_samples_v1"
-)
-SIGNAL_DIR = (
-    "/eos/uscms/store/user/dlee3/sidm_condor/ABCD_cosmic_veto/"
-    "ABCD_landing_10ch_cosmic_veto_v1_signal_full_merged_samples_v1"
-)
+@dataclass(frozen=True)
+class Campaign:
+    """One production campaign: a set of merged coffea outputs to analyse."""
+
+    name: str
+    bkg_dir: str
+    signal_dir: str
+    data_dir: str
+    note: str = ""
+
+
+_EOS = "/eos/uscms/store/user/dlee3/sidm_condor"
+
+CAMPAIGNS = {
+    "cosmic_veto_v1": Campaign(
+        name="cosmic_veto_v1",
+        bkg_dir=f"{_EOS}/ABCD_cosmic_veto/ABCD_landing_10ch_cosmic_veto_v1_bkg_full_merged_samples_v1",
+        signal_dir=f"{_EOS}/ABCD_cosmic_veto/ABCD_landing_10ch_cosmic_veto_v1_signal_full_merged_samples_v1",
+        data_dir=f"{_EOS}/ABCD_cosmic_veto/ABCD_landing_10ch_cosmic_veto_v1_data_full_merged_samples_v1",
+        note="first campaign analysed; its merge step left metadata['is_data'] empty",
+    ),
+    "golden_hotspot_iso025_v1": Campaign(
+        name="golden_hotspot_iso025_v1",
+        bkg_dir=f"{_EOS}/ABCD_golden_hotspot_iso025_v1/ABCD_golden_hotspot_iso025_v1_bkg_merged_samples_v1",
+        signal_dir=f"{_EOS}/ABCD_golden_hotspot_iso025_v1/ABCD_golden_hotspot_iso025_v1_signal_merged_samples_v1",
+        data_dir=f"{_EOS}/ABCD_golden_hotspot_iso025_v1/ABCD_golden_hotspot_iso025_v1_data_merged_samples_v1",
+        note="adds the eta-phi hotspot veto and 0.25 isolation; metadata['is_data'] is populated",
+    ),
+}
+
+DEFAULT_CAMPAIGN = "golden_hotspot_iso025_v1"
+
+# Module-level pointers to the active campaign.  They stay module-level so every
+# existing call site keeps working; use_campaign() repoints them.
+CAMPAIGN = CAMPAIGNS[DEFAULT_CAMPAIGN]
+BKG_DIR = CAMPAIGN.bkg_dir
+SIGNAL_DIR = CAMPAIGN.signal_dir
+DATA_DIR = CAMPAIGN.data_dir
+
+
+def use_campaign(name):
+    """Point the module at a different production campaign.
+
+    Returns the ``Campaign``. Output directories are per-campaign
+    (``campaigns/<name>/...``) so two campaigns can be compared side by side
+    without one overwriting the other.
+    """
+    global CAMPAIGN, BKG_DIR, SIGNAL_DIR, DATA_DIR
+    if name not in CAMPAIGNS:
+        raise KeyError(f"unknown campaign {name!r}; known: {sorted(CAMPAIGNS)}")
+    CAMPAIGN = CAMPAIGNS[name]
+    BKG_DIR, SIGNAL_DIR, DATA_DIR = CAMPAIGN.bkg_dir, CAMPAIGN.signal_dir, CAMPAIGN.data_dir
+    return CAMPAIGN
+
+
+def campaign_outdir(study_dir=None, campaign=None):
+    """Output root for a campaign: ``<study>/campaigns/<campaign>``."""
+    study_dir = Path(study_dir or Path(__file__).resolve().parent)
+    return study_dir / "campaigns" / (campaign or CAMPAIGN.name)
+
 
 # Signal cross section assumed by utilities.get_xs for 2Mu2E/4Mu samples, in pb.
 # Combine's `r` is a multiplier on this reference.
@@ -110,7 +168,7 @@ def bkg_group(sample):
 
 # `<prefix>_<mMediator>GeV_<mDarkPhoton>GeV_<ctau>mm`, e.g. 2Mu2E_1000GeV_1p2GeV_0p96mm
 SIGNAL_NAME = re.compile(
-    r"^(?P<prefix>2Mu2E|4Mu)_(?P<mzd>[\dp]+)GeV_(?P<mdp>[\dp]+)GeV_(?P<ctau>[\dp]+)mm$"
+    r"^(?P<prefix>2Mu2E|4Mu|Comb)_(?P<mzd>[\dp]+)GeV_(?P<mdp>[\dp]+)GeV_(?P<ctau>[\dp]+)mm$"
 )
 
 
@@ -175,20 +233,42 @@ DATA_NAME_HINTS = ("DoubleMuon", "SingleMuon", "EGamma", "SingleElectron",
                    "DoubleEG", "MuonEG", "MET", "JetHT", "Charmonium", "Muon")
 
 
-def is_simulation(sample_name, sample_out=None, cfg="cross_sections.yaml"):
-    """True only if ``sample_name`` can be positively identified as simulation.
+def is_data_flag(sample_out):
+    """Read ``metadata["is_data"]`` if it carries a usable value.
 
-    This deliberately does **not** trust ``metadata["is_data"]``: the merge step
-    empties that accumulator, so it is an empty set for data and simulation
-    alike and would silently report real data as MC.  ``metadata["year"]``
-    happens to be filled only for data in the current files, but that is an
-    accident of the processor rather than a contract.
-
-    So the test is inverted into an allow-list: a sample counts as simulation
-    only if it is a known signal point or carries a cross section in
-    ``cross_sections.yaml``.  Anything unrecognised is treated as data and has
-    its signal region withheld -- the safe direction to fail in.
+    Returns ``True``/``False`` when the accumulator holds exactly one value, and
+    ``None`` when it is missing, empty, or self-contradictory. An empty
+    accumulator is the signature of the merge bug in the first campaign, where
+    the flag was dropped for data and simulation alike -- so "empty" has to mean
+    "no information", never "not data".
     """
+    if not sample_out:
+        return None
+    values = {bool(v) for v in (sample_out.get("metadata", {}).get("is_data") or ())}
+    return values.pop() if len(values) == 1 else None
+
+
+def is_simulation(sample_name, sample_out=None, cfg="cross_sections.yaml"):
+    """True only if this sample can be established to be simulation.
+
+    Two tiers, in order:
+
+    1. ``metadata["is_data"]``, when it carries a usable value. Campaigns from
+       ``ABCD_golden_hotspot_iso025_v1`` onwards populate it correctly, so this
+       is the authoritative answer where it exists.
+    2. Otherwise, an **allow-list** fallback: the sample counts as simulation
+       only if it is a known signal point or carries a cross section in
+       ``cross_sections.yaml``. Anything unrecognised is treated as data.
+
+    The fallback exists because the first campaign's merge step emptied the
+    accumulator, making it an empty set for data and simulation alike -- a naive
+    ``if metadata["is_data"]`` check read real data as MC. Keeping the
+    allow-list underneath means a future regression of the same kind degrades to
+    "withhold too much" rather than silently leaking the signal region.
+    """
+    flag = is_data_flag(sample_out)
+    if flag is not None:
+        return not flag
     if sample_name.startswith(("2Mu2E", "4Mu")):
         return True
     try:
@@ -199,12 +279,21 @@ def is_simulation(sample_name, sample_out=None, cfg="cross_sections.yaml"):
         return False
 
 
-def blinding_reason(sample_name):
+def blinding_basis(sample_out):
+    """Which tier decided: the metadata flag, or the allow-list fallback."""
+    return "metadata_is_data" if is_data_flag(sample_out) is not None else "allow_list_fallback"
+
+
+def blinding_reason(sample_name, sample_out=None):
     """Human-readable explanation of why a sample's SR is withheld."""
+    if is_data_flag(sample_out) is True:
+        return f"{sample_name!r} is flagged as data by metadata['is_data']"
     if any(sample_name.startswith(h) for h in DATA_NAME_HINTS):
-        return f"{sample_name!r} looks like a data primary dataset"
+        return (f"{sample_name!r} looks like a data primary dataset and metadata['is_data'] "
+                f"carries no usable value")
     return (f"{sample_name!r} is not a known signal point and has no entry in "
-            f"cross_sections.yaml, so it cannot be confirmed to be simulation")
+            f"cross_sections.yaml, and metadata['is_data'] carries no usable value, "
+            f"so it cannot be confirmed to be simulation")
 
 
 def region_yields(sample_out, channel, sample_name="", flow=True,
@@ -251,7 +340,7 @@ def sr_yield(sample_out, channel, sample_name="", flow=True, allow_data_sr=False
     if not allow_data_sr and not is_simulation(sample_name, sample_out):
         raise BlindingError(
             f"refusing to read the signal region of {channel.name}: "
-            f"{blinding_reason(sample_name)}. Pass allow_data_sr=True only "
+            f"{blinding_reason(sample_name, sample_out)}. Pass allow_data_sr=True only "
             f"when the analysis has actually been unblinded."
         )
     regions = region_yields(sample_out, channel, sample_name=sample_name,
@@ -592,6 +681,11 @@ def write_datacards(signal_yields, bkg_grouped, outdir, channels=None,
             path = outdir / f"datacard_{ch_name}_{signal_name}.txt"
             path.write_text(card)
             written.append(path)
+
+    write_datacard_metadata(outdir, datacard_metadata(
+        config, channels, method="counting", n_cards=len(written),
+        warnings=[f"floored background: {c}/{s}" for c, s in floored] or None,
+        bkg_grouped=bkg_grouped))
     return written, floored
 
 
@@ -767,4 +861,579 @@ def write_abcd_datacards(signal_yields, bkg_grouped, outdir, channels=None,
             path = outdir / f"datacard_abcd_{ch_name}_{signal_name}.txt"
             path.write_text(card)
             written.append(path)
+
+    write_datacard_metadata(outdir, datacard_metadata(
+        config, channels, method="abcd", n_cards=len(written),
+        warnings=warnings or None, bkg_grouped=bkg_grouped))
     return written, warnings
+
+
+# --------------------------------------------------------------------------- #
+# Provenance sidecars
+# --------------------------------------------------------------------------- #
+# The merged .coffea inputs each carry a .meta.yaml recording what produced
+# them. The datacards and limits derived from them get the same treatment, so a
+# set of limits can be traced back through the configuration that built its
+# cards to the exact coffea files -- and so runs can be sorted by the conditions
+# they were made under without opening the CSVs.
+SIDECAR_SUFFIX = ".meta.yaml"
+
+
+def _git_dirty(repo_root):
+    """True if the working tree has uncommitted changes.
+
+    Recorded alongside the commit: a commit hash alone is misleading provenance
+    when the tree it was run from had local edits.
+    """
+    import subprocess
+    try:
+        r = subprocess.run(["git", "status", "--porcelain"], cwd=str(repo_root),
+                           capture_output=True, text=True, timeout=5)
+        return bool(r.stdout.strip()) if r.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def _utc_now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _repo_root():
+    return Path(BASE_DIR).parent
+
+
+def _read_sidecar(path):
+    try:
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+def selection_definitions(directory, wanted=None):
+    """Pull the full cut definitions out of an input directory's sidecars.
+
+    The coffea sidecars record every cut that produced them -- object cuts,
+    post-lepton-jet object cuts and event cuts -- so those definitions are
+    copied verbatim into the datacard sidecar rather than being described
+    second-hand. ``wanted`` restricts the result to the selections actually
+    used; pass ``None`` for all of them.
+    """
+    directory = Path(directory)
+    sidecars = sorted(directory.glob("*" + SIDECAR_SUFFIX))
+    if not sidecars:
+        return {}, []
+    meta = _read_sidecar(sidecars[0])
+    out, available = {}, []
+    for entry in meta.get("selections") or []:
+        if not isinstance(entry, dict) or "name" not in entry:
+            continue
+        available.append(entry["name"])
+        if wanted is None or entry["name"] in wanted:
+            out[entry["name"]] = entry.get("definition")
+    return out, available
+
+
+def _selections_agree(wanted):
+    """Check the background and signal inputs were made with the same cuts.
+
+    If they were not, every yield in the datacards is comparing apples to
+    oranges, so this is recorded explicitly rather than assumed.
+    """
+    bkg, _ = selection_definitions(BKG_DIR, wanted)
+    sig, _ = selection_definitions(SIGNAL_DIR, wanted)
+    if not bkg or not sig:
+        return None, ["could not read selection definitions from both inputs"]
+    mismatched = [name for name in wanted
+                  if bkg.get(name) != sig.get(name)]
+    return (not mismatched), mismatched
+
+
+def _input_provenance(directory, max_files=3):
+    """Summarise the .meta.yaml sidecars of the coffea files we read.
+
+    Records the upstream ``sidm_commit`` and creation timestamps so a change in
+    the inputs is visible here rather than having to be remembered.  Only a
+    sample of sidecars is read; the commits are collected as a set so a mixed
+    input set shows up as more than one entry.
+    """
+    directory = Path(directory)
+    sidecars = sorted(directory.glob("*" + SIDECAR_SUFFIX))
+    info = {
+        "path": str(directory),
+        "n_coffea_files": len(sorted(directory.glob("*.coffea"))),
+        "n_sidecars": len(sidecars),
+    }
+    commits, created, schemas = set(), set(), set()
+    for path in sidecars[:max_files]:
+        meta = _read_sidecar(path)
+        if not meta:
+            continue
+        for key, bucket in (("sidm_commit", commits), ("created_utc", created),
+                            ("schema", schemas)):
+            if meta.get(key) is not None:
+                bucket.add(str(meta[key]))
+    info["upstream_sidm_commit"] = sorted(commits)
+    info["upstream_created_utc"] = sorted(created)
+    info["upstream_schema"] = sorted(schemas)
+    info["sidecars_sampled"] = min(len(sidecars), max_files)
+    first = _read_sidecar(sidecars[0]) if sidecars else {}
+    info["chunksize"] = first.get("chunksize")
+    info["unweighted_hist"] = first.get("unweighted_hist")
+    info["hist_collections"] = [h.get("name") for h in (first.get("hist_collections") or [])
+                                if isinstance(h, dict)]
+    return info
+
+
+def datacard_metadata(config, channels=None, method="counting", n_cards=None,
+                      warnings=None, bkg_grouped=None):
+    """Assemble the provenance record for a set of datacards."""
+    from sidm.tools import metadata as sidm_metadata
+    channels = channels or CHANNELS
+    config = config or DatacardConfig()
+
+    record = {
+        "created_utc": _utc_now(),
+        "produced_by": "sidm/studies/limit_plotting/datacard_tools.py",
+        "producer": getpass.getuser(),
+        "host": socket.gethostname(),
+        "sidm_commit": sidm_metadata._git_rev(_repo_root()),
+        "sidm_working_tree_dirty": _git_dirty(_repo_root()),
+        "python": platform.python_version(),
+        "campaign": {
+            "name": CAMPAIGN.name,
+            "note": CAMPAIGN.note,
+            "bkg_dir": CAMPAIGN.bkg_dir,
+            "signal_dir": CAMPAIGN.signal_dir,
+            "data_dir": CAMPAIGN.data_dir,
+        },
+        "method": method,
+        "n_datacards": n_cards,
+        "signal_normalisation": "theory_xs" if config.use_theory_xs else "1fb_reference",
+        "inputs": {
+            "background": _input_provenance(BKG_DIR),
+            "signal": _input_provenance(SIGNAL_DIR),
+        },
+        "analysis": {
+            "abcd_regions": dict(ABCD_REGIONS),
+            "signal_region": ABCD_REGIONS[SR_ABCD_REGION],
+            "abcd_closure_relation": "A = B*C/D",
+            "flow_included_in_sums": True,
+            "signal_ref_xs_pb": SIGNAL_REF_XS_PB,
+            "production_lumi_pb": LUMI_PB,
+            "effective_lumi_pb": config.target_lumi_pb or LUMI_PB,
+            "channels": {
+                name: {"selection": ch.selection, "hist": ch.hist_name,
+                       "signal_prefix": ch.signal_prefix}
+                for name, ch in channels.items()
+            },
+        },
+        # The cuts that produced the inputs, copied verbatim out of the coffea
+        # sidecars so the limits record what selection they were made under.
+        "selection_cuts": _used_selection_cuts(channels),
+        "datacard_config": {
+            f.name: getattr(config, f.name) for f in fields(config)
+        },
+        "blinding": {
+            "policy": "metadata['is_data'] where it carries a usable value; otherwise an "
+                      "allow-list fallback releasing the signal region only for a known "
+                      "signal point or a sample with a cross section in cross_sections.yaml",
+            "basis_for_this_campaign": _campaign_blinding_basis(),
+            "fails_closed": True,
+            "note": "the fallback exists because the cosmic_veto_v1 merge emptied "
+                    "metadata['is_data'], making it an empty set for data and simulation "
+                    "alike; a naive check read real data as MC",
+        },
+    }
+    if warnings:
+        record["warnings"] = list(warnings)
+    if bkg_grouped is not None:
+        record["background_yields"] = {
+            ch: {ABCD_REGIONS[r]: round(total_background(bkg_grouped, ch, r).value, 6)
+                 for r in sorted(ABCD_REGIONS)}
+            for ch in channels
+        }
+    return record
+
+
+def _campaign_blinding_basis():
+    """Whether this campaign's files carry a usable ``is_data`` flag."""
+    try:
+        files = sorted(Path(BKG_DIR).glob("*.coffea"))
+        if not files:
+            return "unknown (no input files found)"
+        out = read_coffea(files[0])
+        so = out[list(out)[0]]
+        return blinding_basis(so)
+    except Exception:
+        return "unknown"
+
+
+def _used_selection_cuts(channels):
+    """Full cut definitions for the selections these datacards actually use.
+
+    Copied verbatim from the input coffea sidecars, plus a check that the
+    background and signal inputs were produced with identical cuts -- if they
+    were not, the yields are not comparable and the sidecar says so.
+    """
+    wanted = sorted({ch.selection for ch in channels.values()})
+    definitions, available = selection_definitions(BKG_DIR, wanted)
+    agree, mismatched = _selections_agree(wanted)
+    record = {
+        "used": wanted,
+        "background_signal_definitions_agree": agree,
+        "available_in_inputs": available,
+        "source": "copied from the .meta.yaml sidecars of the input coffea files",
+        "definitions": definitions,
+    }
+    if mismatched:
+        record["MISMATCHED_between_background_and_signal"] = mismatched
+    return record
+
+
+def write_datacard_metadata(outdir, record):
+    """Write ``datacards.meta.yaml`` into a datacard directory."""
+    path = Path(outdir) / ("datacards" + SIDECAR_SUFFIX)
+    with open(path, "w") as f:
+        yaml.safe_dump(record, f, sort_keys=False, default_flow_style=False)
+    return path
+
+
+def load_limit_metadata(path):
+    """Read a ``limits.meta.yaml``, given it or the directory containing it."""
+    path = Path(path)
+    if path.is_dir():
+        path = path / ("limits" + SIDECAR_SUFFIX)
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def index_limit_runs(study_dir=None, pattern="limits*"):
+    """Tabulate every set of limits under ``study_dir`` by how it was produced.
+
+    Walks the ``limits*`` directories, reads each ``limits.meta.yaml`` and
+    flattens the fields most useful for telling runs apart -- method,
+    normalisation, blinding, the datacard configuration, the upstream coffea
+    commit -- into one row per run.  Returns a ``pandas.DataFrame``, so runs can
+    be sorted or filtered by the conditions they were made under.
+    """
+    import pandas as pd
+    study_dir = Path(study_dir or Path(__file__).resolve().parent)
+    rows = []
+    for directory in sorted(study_dir.glob(pattern)):
+        sidecar = directory / ("limits" + SIDECAR_SUFFIX)
+        if sidecar.exists():
+            try:
+                with open(sidecar) as f:
+                    meta = yaml.safe_load(f) or {}
+            except Exception as exc:
+                rows.append({"run": directory.name, "error": str(exc)})
+                continue
+            cards = meta.get("datacards") or {}
+            cfg = cards.get("datacard_config") or {}
+            combine = meta.get("combine") or {}
+            run = meta.get("run") or {}
+            summary = meta.get("results_summary") or {}
+            inputs = (cards.get("inputs") or {}).get("background") or {}
+            rows.append({
+                "run": directory.name,
+                "created_utc": meta.get("created_utc"),
+                "method": cards.get("method"),
+                "signal_norm": cards.get("signal_normalisation"),
+                "blinded": combine.get("blinded"),
+                "abcd_observation": cfg.get("abcd_observation"),
+                "use_theory_xs": cfg.get("use_theory_xs"),
+                "mc_stat": cfg.get("mc_stat"),
+                "lumi_unc": cfg.get("lumi_unc"),
+                "bkg_norm_unc": cfg.get("bkg_norm_unc"),
+                "target_lumi_pb": cfg.get("target_lumi_pb"),
+                "n_limits": run.get("n_limits"),
+                "n_failed": run.get("n_failed"),
+                "median_exp_r": summary.get("median_expected_r"),
+                "median_obs_r": summary.get("median_observed_r"),
+                "combine_version": (combine.get("version") or [None])[0],
+                "sidm_commit": (cards.get("sidm_commit") or "")[:8] or None,
+                "tree_dirty": cards.get("sidm_working_tree_dirty"),
+                "upstream_commit": ((inputs.get("upstream_sidm_commit") or [""])[0])[:8] or None,
+            })
+    return pd.DataFrame(rows)
+
+
+def load_campaign_limits(campaign, which="limits", study_dir=None):
+    """Read one limit set for one campaign, with the derived plotting columns.
+
+    ``which`` is the directory name under ``campaigns/<campaign>/`` --
+    ``limits``, ``limits_abcd``, ``limits_obs``, and so on.
+    """
+    import pandas as pd
+    path = campaign_outdir(study_dir, campaign) / which / "limits.csv"
+    if not path.exists():
+        return None
+    df = pd.read_csv(path).rename(columns={
+        "final_state": "topology", "m_mediator": "m_bound", "m_darkphoton": "mzd",
+        "exp_m2": "expected_2p5", "exp_m1": "expected_16", "exp": "expected_50",
+        "exp_p1": "expected_84", "exp_p2": "expected_97p5"})
+    df["campaign"] = campaign
+    df["limit_set"] = which
+    from sidm.tools import utilities
+    df["theory_xs_fb"] = [utilities.get_xs(x, use_signal_xs=True) * 1000.0
+                          for x in df.signal]
+    df["r_theory"] = df.expected_50 / df.theory_xs_fb
+    if "obs" in df and df.obs.notna().any():
+        df["r_theory_obs"] = df.obs / df.theory_xs_fb
+    return df
+
+
+def compare_campaigns(which="limits", campaigns=None, study_dir=None):
+    """Join the same limit set across campaigns, one row per signal point.
+
+    Returns a DataFrame with ``expected_50`` from each campaign side by side
+    plus their ratio, so the effect of a reprocessing can be read off directly.
+    """
+    import pandas as pd
+    campaigns = campaigns or list(CAMPAIGNS)
+    frames = {c: load_campaign_limits(c, which, study_dir) for c in campaigns}
+    frames = {c: f for c, f in frames.items() if f is not None}
+    if len(frames) < 2:
+        return pd.DataFrame()
+    keys = ["channel", "signal", "topology", "m_bound", "mzd", "ctau", "theory_xs_fb"]
+    names = list(frames)
+    merged = frames[names[0]][keys + ["expected_50", "r_theory"]].rename(
+        columns={"expected_50": f"exp_{names[0]}", "r_theory": f"r_{names[0]}"})
+    for name in names[1:]:
+        right = frames[name][["channel", "signal", "expected_50", "r_theory"]].rename(
+            columns={"expected_50": f"exp_{name}", "r_theory": f"r_{name}"})
+        merged = merged.merge(right, on=["channel", "signal"])
+    if len(names) == 2:
+        merged["ratio"] = merged[f"exp_{names[1]}"] / merged[f"exp_{names[0]}"]
+    return merged
+
+
+# --------------------------------------------------------------------------- #
+# Combining the two final states
+# --------------------------------------------------------------------------- #
+# The 2Mu2E and 4Mu samples are two decay modes of the same model, simulated at
+# the same 60 (m_bound, m_ZD, ctau) points. A search would use both, so the
+# combination pairs them into one datacard with a shared signal strength: the
+# 2mu2e and 4mu signal regions become separate bins, and each bin receives the
+# signal from BOTH samples (the 4Mu sample leaks ~1% into SR_2mu2e, which is
+# small but no longer negligible in the newer production).
+#
+# ASSUMPTION: both samples are normalised to the same reference, so the
+# combination assumes the model yields each final state at that cross section --
+# i.e. it does not model the branching split between them. Change
+# `final_state_weights` if a split is known.
+COMBINED_PREFIX = "Comb"
+
+
+def combined_grid_key(signal_name):
+    """The grid part of a signal name, shared by both final states.
+
+    Reuses the sample name's own suffix rather than reformatting the numbers, so
+    ``5p0GeV`` does not silently become ``5GeV`` and the result round-trips
+    through ``parse_signal_name``.
+    """
+    m = SIGNAL_NAME.match(signal_name)
+    if not m:
+        return None
+    return signal_name[len(m["prefix"]) + 1:]
+
+
+def combined_point_name(key):
+    """Canonical name for a combined grid point, e.g. ``Comb_800GeV_5p0GeV_5p0mm``."""
+    return f"{COMBINED_PREFIX}_{key}"
+
+
+def combine_final_states(signal_yields, channels=None, final_state_weights=None):
+    """Sum the 2Mu2E and 4Mu samples per grid point, per channel, per region.
+
+    Returns ``{combined_name: {channel: {region: Yield}}}`` plus a dict mapping
+    each combined name back to the sample names it was built from.
+    """
+    channels = channels or CHANNELS
+    weights = final_state_weights or {}
+    combined, provenance = {}, {}
+    for sample, per_channel in signal_yields.items():
+        key = combined_grid_key(sample)
+        if key is None:
+            continue
+        info = parse_signal_name(sample)
+        weight = weights.get(info["final_state"], 1.0)
+        name = combined_point_name(key)
+        target = combined.setdefault(name, {})
+        provenance.setdefault(name, []).append(sample)
+        for ch_name, regions in per_channel.items():
+            if ch_name not in channels:
+                continue
+            bucket = target.setdefault(ch_name, {})
+            for region, y in regions.items():
+                scaled = y.scaled(weight)
+                bucket[region] = bucket[region] + scaled if region in bucket else scaled
+    # only keep points where both final states were present
+    complete = {n: v for n, v in combined.items() if len(provenance[n]) == 2}
+    return complete, {n: sorted(provenance[n]) for n in complete}
+
+
+def combined_theory_xs_pb(combined_name, provenance):
+    """Theory cross section for a combined point.
+
+    Both final states at a given ``m_bound`` share one value, so this is
+    unambiguous; it raises if that ever stops being true rather than silently
+    picking one.
+    """
+    from sidm.tools import utilities
+    values = {utilities.get_xs(s, use_signal_xs=True) for s in provenance[combined_name]}
+    if len(values) != 1:
+        raise ValueError(
+            f"{combined_name}: its final states have different theory cross sections "
+            f"({sorted(values)}), so the combined normalisation is ambiguous"
+        )
+    return values.pop()
+
+
+def build_combined_datacard(name, signal_regions, bkg_grouped, channels=None,
+                            config=None, theory_xs_pb=None, floored=None):
+    """Two-bin counting card: both signal regions, one shared signal strength.
+
+    ``signal_regions`` is ``{channel: {region: Yield}}`` for the combined point.
+    Only region A of each channel is used; the control regions are what the ABCD
+    variant needs.
+    """
+    channels = channels or CHANNELS
+    config = config or DatacardConfig()
+    scale = lumi_scale(config)
+    if config.use_theory_xs:
+        if not theory_xs_pb:
+            raise ValueError(f"{name}: no theory cross section for a theory-normalised card")
+        scale *= theory_xs_pb / SIGNAL_REF_XS_PB
+
+    bins, sig_rate, bkg_procs = [], {}, {}
+    for ch_name in channels:
+        sig = signal_regions.get(ch_name, {}).get(SR_ABCD_REGION)
+        if sig is None:
+            continue
+        kept = {p: y.scaled(scale if False else lumi_scale(config))
+                for p, y in bkg_grouped.get(ch_name, {}).get(SR_ABCD_REGION, {}).items()
+                if y.value > config.min_process_rate}
+        if not kept:
+            kept = {"bkg": Yield(config.min_bkg, config.min_bkg ** 2)}
+            if floored is not None:
+                floored.append((ch_name, name))
+        bins.append(ch_name)
+        sig_rate[ch_name] = sig.scaled(scale)
+        bkg_procs[ch_name] = kept
+    if not bins:
+        return None
+
+    # one column per (bin, process); signal first in each bin
+    columns = []
+    for b in bins:
+        columns.append((b, "signal", sig_rate[b]))
+        for pname, y in bkg_procs[b].items():
+            columns.append((b, pname, y))
+
+    width = max(14, max(len(p) for _, p, _ in columns) + 2)
+    col = lambda vals: "".join(f"{v:<{width}}" for v in vals)
+    pad = 40
+
+    rates = [y.value for _, _, y in columns]
+    stat_rows = []
+    for i, (b, pname, y) in enumerate(columns):
+        if not config.mc_stat or y.rel_error <= 0:
+            continue
+        cells = ["-"] * len(columns)
+        label = f"mcstat_{b}_{pname}"
+        if config.mc_stat == "gmN" and pname != "signal":
+            n_raw = max(1, round(1.0 / y.rel_error ** 2))
+            alpha = float(_fmt(y.value / n_raw))
+            cells[i] = alpha
+            rates[i] = n_raw * alpha
+            stat_rows.append((label, f"gmN {n_raw}", cells))
+        else:
+            cells[i] = 1 + min(y.rel_error, config.mc_stat_cap)
+            stat_rows.append((label, "lnN", cells))
+
+    observation = {b: sum(r for (bb, pn, _), r in zip(columns, rates)
+                          if bb == b and pn != "signal") for b in bins}
+
+    lines = [
+        f"# SIDM combined counting datacard -- {name}",
+        f"# both signal regions as separate bins, one shared signal strength",
+        f"# built from: {', '.join(sorted(signal_regions.get('__provenance__', [])) )}"
+        if "__provenance__" in signal_regions else
+        "# 2Mu2E and 4Mu final states combined; each bin receives signal from both",
+        _norm_comment_combined(config, theory_xs_pb),
+        f"imax {len(bins)}  number of bins",
+        f"jmax *  number of background processes",
+        "kmax *  number of nuisance parameters",
+        "-" * 96,
+        "bin".ljust(22) + "".join(f"{b:<{width}}" for b in bins),
+        "observation".ljust(22) + "".join(f"{_fmt(observation[b]):<{width}}" for b in bins),
+        "-" * 96,
+        "bin".ljust(pad) + col([b for b, _, _ in columns]),
+        "process".ljust(pad) + col([p for _, p, _ in columns]),
+        "process".ljust(pad) + col([_process_index(b, p, bins, bkg_procs)
+                                    for b, p, _ in columns]),
+        "rate".ljust(pad) + col([_fmt(r) for r in rates]),
+        "-" * 96,
+    ]
+
+    name_w = max([len("lumi_13TeV")] + [len(n) for n, _, _ in stat_rows]) + 2
+    kind_w = max([len("lnN")] + [len(k) for _, k, _ in stat_rows]) + 2
+    nuis = lambda n, k, v: f"{n:<{name_w}}{k:<{kind_w}}" + col(
+        [x if isinstance(x, str) else _fmt(x) for x in v])
+
+    lines.append(nuis("lumi_13TeV", "lnN", [1 + config.lumi_unc] * len(columns)))
+    if config.signal_unc:
+        lines.append(nuis("signal_norm", "lnN",
+                          [1 + config.signal_unc if p == "signal" else "-"
+                           for _, p, _ in columns]))
+    if config.bkg_norm_unc:
+        lines.append(nuis("bkg_norm", "lnN",
+                          ["-" if p == "signal" else 1 + config.bkg_norm_unc
+                           for _, p, _ in columns]))
+    lines += [nuis(*row) for row in stat_rows]
+    return "\n".join(lines) + "\n"
+
+
+def _process_index(bin_name, process, bins, bkg_procs):
+    """Combine's convention: signal <= 0, backgrounds >= 1, numbered per card."""
+    if process == "signal":
+        return "0"
+    order = list(bkg_procs[bin_name])
+    return str(order.index(process) + 1)
+
+
+def _norm_comment_combined(config, theory_xs_pb):
+    lumi_fb = (config.target_lumi_pb or LUMI_PB) / 1000
+    if config.use_theory_xs and theory_xs_pb:
+        return (f"# signal at its theory cross section {theory_xs_pb * 1000:g} fb "
+                f"per final state at {lumi_fb:g} /fb, so r < 1 means excluded")
+    return (f"# signal at {SIGNAL_REF_XS_PB * 1000:g} fb PER FINAL STATE at {lumi_fb:g} /fb; "
+            f"the combination assumes the model yields both at that rate")
+
+
+def write_combined_datacards(signal_yields, bkg_grouped, outdir, channels=None,
+                             config=None, final_state_weights=None):
+    """Write one two-bin combined counting card per grid point."""
+    channels = channels or CHANNELS
+    config = config or DatacardConfig()
+    outdir = Path(outdir); outdir.mkdir(parents=True, exist_ok=True)
+    combined, provenance = combine_final_states(signal_yields, channels, final_state_weights)
+
+    written, floored = [], []
+    for name in sorted(combined):
+        xs = combined_theory_xs_pb(name, provenance) if config.use_theory_xs else None
+        card = build_combined_datacard(name, combined[name], bkg_grouped, channels,
+                                       config=config, theory_xs_pb=xs, floored=floored)
+        if card is None:
+            continue
+        path = outdir / f"datacard_comb_{name}.txt"
+        path.write_text(card)
+        written.append(path)
+
+    write_datacard_metadata(outdir, datacard_metadata(
+        config, channels, method="combined", n_cards=len(written),
+        warnings=[f"floored background: {c}/{s}" for c, s in floored] or None,
+        bkg_grouped=bkg_grouped))
+    return written, floored

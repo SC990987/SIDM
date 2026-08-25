@@ -29,11 +29,14 @@ the card's own header rather than the directory name.
 | `make_datacards.ipynb` | reads the coffea files, shows the yield/contamination tables, writes both card sets |
 | `limit_plots.ipynb` | reads `limits/limits.csv`, derives `Lxy` and `epsilon^2`, applies theory cross sections, writes `plots/` |
 | `NOTES.md` | dated running log of what was done and what was found |
+| `datacards*/datacards.meta.yaml` | provenance sidecar: config, inputs, upstream coffea commit |
+| `limits*/limits.meta.yaml` | provenance sidecar: Combine setup, results summary, datacard sidecar embedded |
 | `reference_limits/` | drop digitised external dark photon contours here; format and provenance in its README |
 | `datacards/` | 120 one-bin counting cards (background straight from MC region A) |
 | `datacards_abcd/` | 120 four-bin cards, region-A background predicted from B, C, D in the fit |
 | `limits/`, `limits_abcd/` | Combine output for each flavour, written by `sidm/scripts/run_combine_limits.py` |
-| `plots/` | expected-limit figures (png + pdf), gitignored |
+| `plots/<campaign>/` | figures for one campaign, each stamped with its campaign name; gitignored |
+| `plots/campaigns/` | cross-campaign comparison figures; gitignored |
 | `sr_yields.pkl` | cached SR yields so the notebook need not re-read EOS, gitignored |
 | `slides/` | 24-slide deck: method, nuisances, blinding fail-safe, results (gitignored) |
 
@@ -72,6 +75,57 @@ the card's own header rather than the directory name.
    ```
 
    (twice, for the frame numbers; it pulls the pdf figures straight out of `../plots/summary/`)
+
+## Campaigns
+
+Two productions are analysed, with outputs side by side under `campaigns/<name>/`:
+
+| campaign | notes |
+|---|---|
+| `cosmic_veto_v1` | original; its merge left `metadata["is_data"]` empty |
+| `golden_hotspot_iso025_v1` | **default**; adds the eta-phi hotspot veto and 0.25 isolation; `is_data` populated |
+
+```python
+datacard_tools.use_campaign("golden_hotspot_iso025_v1")
+datacard_tools.compare_campaigns("limits_abcd_obs")     # cross-campaign join
+```
+
+Each campaign directory holds `sr_yields.pkl`, `datacards*/` and `limits*/`. Both notebooks
+take a `CAMPAIGN` variable at the top.
+
+Figures are written to `plots/<campaign>/` so two campaigns cannot overwrite each other, and
+**every figure carries its campaign name in the top-right corner** — a plot lifted into a talk
+still says which production it came from. Cross-campaign comparisons go to `plots/campaigns/`
+and are stamped `old vs new`.
+
+## Provenance
+
+Every set of datacards and limits carries a `.meta.yaml` sidecar, the same convention the
+merged coffea inputs use, so the chain **coffea → datacards → limits** is recoverable from one
+file and runs can be sorted by the conditions they were made under.
+
+`datacards*/datacards.meta.yaml` records the full `DatacardConfig`, the ABCD convention, the
+per-region background yields, the blinding policy, this repo's commit **and whether the working
+tree was dirty**, and the upstream `sidm_commit`/timestamps of the coffea files read.
+
+It also carries a **`selection_cuts`** block with the complete cut definitions — object cuts,
+post-lepton-jet object cuts and event cuts — copied verbatim out of the input coffea sidecars
+for the two SR selections actually used, so the limits record exactly which selection produced
+them. `background_signal_definitions_agree` records whether the background and signal inputs
+were made with identical cuts; if they were not, the yields are not comparable and the field
+says so (currently `true`).
+
+`limits*/limits.meta.yaml` records the Combine version and options, blinded vs not, how `rMax`
+was chosen, how many cards ran and failed, a results summary, and embeds the datacard sidecar
+whole.
+
+To compare runs:
+
+```python
+import datacard_tools
+datacard_tools.index_limit_runs()          # one row per limits*/ directory
+datacard_tools.load_limit_metadata("limits_abcd_obs")   # the full record
+```
 
 ## Things worth knowing
 
@@ -149,12 +203,13 @@ the card's own header rather than the directory name.
   but because region C holds just 1.67 background events. This is why the ABCD cards enter
   signal in all four bins rather than only in A.
 
-* **The signal region is blinded by construction.** `datacard_tools` withholds region A for
-  any sample it cannot positively identify as simulation. It deliberately does *not* trust
-  `metadata["is_data"]`, which the merge step empties, so real data would otherwise read as MC.
-  A sample counts as simulation only if it is a known signal point or has a cross section in
-  `cross_sections.yaml`; anything else has its SR omitted and `sr_yield` raises
-  `BlindingError`. The guard fails toward withholding too much, never toward leaking.
+* **The signal region is blinded by construction, in two tiers.** `datacard_tools` first
+  trusts `metadata["is_data"]` where it carries a usable value — the new production populates
+  it correctly. Where it does not (an *empty* accumulator counts as no information, never as
+  "not data"), it falls back to an allow-list: a sample counts as simulation only if it is a
+  known signal point or has a cross section in `cross_sections.yaml`. Anything else has its SR
+  omitted and `sr_yield` raises `BlindingError`. The guard fails toward withholding too much,
+  never toward leaking, and tier 1 additionally catches a data file *named* like signal.
 
 * **The ABCD cards do the arithmetic inside Combine.** `bNorm`, `cNorm` and `dNorm` are
   unconstrained `rateParam`s on the three control regions and region A's background is defined

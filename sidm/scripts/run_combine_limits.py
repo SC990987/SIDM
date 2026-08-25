@@ -35,6 +35,8 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import csv
+import getpass
+import socket
 import json
 import math
 import os
@@ -43,7 +45,10 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STUDY_DIR = REPO_ROOT / "sidm" / "studies" / "limit_plotting"
@@ -55,6 +60,7 @@ CMSSET = "/cvmfs/cms.cern.ch/cmsset_default.sh"
 # Combine prints one line per quantile, e.g. "Expected 50.0%: r < 14.3125".
 QUANTILE_LINE = re.compile(r"Expected\s+([\d.]+)%:\s*r\s*<\s*([\deE.+-]+)")
 OBSERVED_LINE = re.compile(r"Observed Limit:\s*r\s*<\s*([\deE.+-]+)")
+COMBINE_VERSION = re.compile(r"<<<\s*(v[\d.]+)\s*>>>")
 
 # Map the quantiles Combine reports onto the column names used downstream.
 QUANTILE_COLUMNS = {
@@ -68,13 +74,22 @@ QUANTILE_COLUMNS = {
 # The grid coordinates are recovered from the filename rather than imported from
 # datacard_tools, so this script stays runnable in the Combine release, where
 # coffea (which that module imports) is not installed.
+# Combine version strings seen during this run, for the provenance sidecar.
+COMBINE_VERSION_SEEN = set()
+
 # datacard_<channel>_<signal>.txt, e.g. datacard_SR_2mu2e_2Mu2E_1000GeV_1p2GeV_0p96mm.txt
+# datacard_<method>_<channel>_<signal>.txt, or datacard_comb_<signal>.txt for the
+# combined cards, which span both channels and so carry no channel in the name.
 CARD_NAME = re.compile(
-    r"^datacard_(?P<method>abcd_)?(?P<channel>SR_\w+?)_"
+    r"^datacard_(?:(?P<method>abcd)_)?(?P<channel>SR_\w+?)_"
     r"(?P<signal>(?:2Mu2E|4Mu)_[\dp]+GeV_[\dp]+GeV_[\dp]+mm)$"
 )
+COMBINED_CARD_NAME = re.compile(
+    r"^datacard_comb_(?:(?P<method>abcd)_)?"
+    r"(?P<signal>Comb_[\dp]+GeV_[\dp]+GeV_[\dp]+mm)$"
+)
 SIGNAL_NAME = re.compile(
-    r"^(?P<final_state>2Mu2E|4Mu)_(?P<mzd>[\dp]+)GeV_(?P<mdp>[\dp]+)GeV_(?P<ctau>[\dp]+)mm$"
+    r"^(?P<final_state>2Mu2E|4Mu|Comb)_(?P<mzd>[\dp]+)GeV_(?P<mdp>[\dp]+)GeV_(?P<ctau>[\dp]+)mm$"
 )
 
 CSV_COLUMNS = [
@@ -87,10 +102,19 @@ CSV_COLUMNS = [
 def parse_card_name(stem):
     """Pull the channel and signal point out of a datacard filename stem."""
     m = CARD_NAME.match(stem)
+    combined = None
     if not m:
-        return {"channel": "", "signal": stem, "method": ""}
-    info = {"channel": m["channel"], "signal": m["signal"],
-            "method": "abcd" if m["method"] else "counting"}
+        combined = COMBINED_CARD_NAME.match(stem)
+        if not combined:
+            return {"channel": "", "signal": stem, "method": ""}
+    if combined:
+        # the combined cards carry both signal regions in one fit
+        info = {"channel": "combined", "signal": combined["signal"],
+                "method": "combined_abcd" if combined["method"] else "combined"}
+        m = combined
+    else:
+        info = {"channel": m["channel"], "signal": m["signal"],
+                "method": "abcd" if m["method"] else "counting"}
     s = SIGNAL_NAME.match(m["signal"])
     if s:
         num = lambda x: float(x.replace("p", "."))
@@ -266,6 +290,9 @@ def run_one(card, args):
             break
         limits = parse_output(output)
         if "exp" in limits:
+            m = COMBINE_VERSION.search(output)
+            if m:
+                COMBINE_VERSION_SEEN.add(m.group(1))
             break
         if rmax is None or args.rmax:
             break  # a fixed range was requested; do not second-guess it
@@ -304,6 +331,71 @@ def load_existing(csv_path):
             row[key] = float(value) if value not in ("", None) else None
         out[row["datacard"]] = row
     return out
+
+
+def write_limit_metadata(outdir, args, rows, errors, cards):
+    """Write ``limits.meta.yaml`` next to ``limits.csv``.
+
+    Mirrors the ``.meta.yaml`` convention the merged coffea inputs use, so a set
+    of limits records the conditions it was produced under and can be sorted by
+    them. The datacard directory's own sidecar is embedded whole, which in turn
+    carries the upstream coffea provenance -- so the chain
+    coffea -> datacards -> limits is recoverable from this one file.
+    """
+    datacard_meta = None
+    sidecar_in = Path(args.datacards) / "datacards.meta.yaml"
+    if sidecar_in.exists():
+        try:
+            with open(sidecar_in) as f:
+                datacard_meta = yaml.safe_load(f)
+        except Exception as exc:
+            datacard_meta = {"error": f"could not read {sidecar_in}: {exc}"}
+
+    exp = [r["exp"] for r in rows if r.get("exp") is not None]
+    obs = [r["obs"] for r in rows if r.get("obs") is not None]
+    record = {
+        "created_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "produced_by": "sidm/scripts/run_combine_limits.py",
+        "producer": getpass.getuser(),
+        "host": socket.gethostname(),
+        "combine": {
+            "method": "AsymptoticLimits",
+            "version": sorted(COMBINE_VERSION_SEEN) or None,
+            "cmssw_release": None if args.no_cmsenv else str(args.combine_cmssw),
+            "blinded": bool(args.blind),
+            "expected_kind": "a-priori (Asimov, observation ignored)" if args.blind
+                             else "a-posteriori (fit to the observation)",
+            "observed_limits_present": bool(obs),
+            "rmax_strategy": ("fixed" if args.rmax else
+                              "per-card estimate from S and B, one 100x retry"
+                              if args.auto_rmax else "combine default"),
+            "rmax_fixed": args.rmax,
+            "extra_args": args.extra or None,
+            "timeout_s": args.timeout,
+            "jobs": args.jobs,
+        },
+        "run": {
+            "datacard_dir": str(args.datacards),
+            "pattern": args.pattern,
+            "n_datacards_matched": len(cards),
+            "n_limits": len(rows),
+            "n_failed": len(errors),
+            "failures": [e.splitlines()[0] for e in errors] or None,
+        },
+        "results_summary": {
+            "median_expected_r": round(sorted(exp)[len(exp) // 2], 6) if exp else None,
+            "min_expected_r": round(min(exp), 6) if exp else None,
+            "max_expected_r": round(max(exp), 6) if exp else None,
+            "median_observed_r": round(sorted(obs)[len(obs) // 2], 6) if obs else None,
+        },
+        "warning": ("Observed limits here are the fit run against simulation standing in "
+                    "for data -- a closure test, not a measurement.") if obs else None,
+        "datacards": datacard_meta,
+    }
+    path = Path(outdir) / "limits.meta.yaml"
+    with open(path, "w") as f:
+        yaml.safe_dump(record, f, sort_keys=False, default_flow_style=False)
+    return path
 
 
 def write_results(rows, outdir):
@@ -420,7 +512,9 @@ def main(argv=None):
         sys.exit("no limits were produced")
 
     csv_path, json_path = write_results(rows, outdir)
+    meta_path = write_limit_metadata(outdir, args, rows, errors, cards)
     print(f"\nwrote {len(rows)} limits to {csv_path} and {json_path}")
+    print(f"provenance sidecar: {meta_path}")
     if errors:
         print(f"\n{len(errors)} datacards failed:")
         for error in errors:
