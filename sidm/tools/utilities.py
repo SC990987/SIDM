@@ -1287,14 +1287,3 @@ def get_pairs(obj):
     pairs = ak.combinations(obj, 2, axis=1)
     return (pairs)
 
-def muon_pt_resolution(objs, mask):
-    reco_mu = objs["muons"]
-    gen_mu = reco_mu.nearest(objs["genMu"])
-
-    dr = dR(reco_mu, objs["genMu"])
-    matched = dr < 0.5
-
-    return (
-        reco_mu[matched].pt
-        - gen_mu[matched].pt
-    ) / gen_mu[matched].pt
