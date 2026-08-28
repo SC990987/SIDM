@@ -1437,3 +1437,113 @@ def write_combined_datacards(signal_yields, bkg_grouped, outdir, channels=None,
         warnings=[f"floored background: {c}/{s}" for c, s in floored] or None,
         bkg_grouped=bkg_grouped))
     return written, floored
+
+
+# --------------------------------------------------------------------------- #
+# Re-deriving the ABCD regions from the 2D isolation plane
+# --------------------------------------------------------------------------- #
+# The abcd_region axis is pre-binned at iso <= 0.25 on both axes, but the
+# underlying 2D isolation distributions are also stored, so the region
+# boundaries can be moved after the fact. That allows the control regions to be
+# pushed away from the signal-rich corner to cut signal contamination, while
+# region A itself stays exactly where it is.
+#
+# Verified: with cr_cut == a_cut == 0.25 this reproduces the abcd_region yields
+# exactly, in every region, for signal and background.
+ISO_PLANE = {
+    "SR_2mu2e": {"hist": "mulj_egmlj_iso", "axes": ("mu_lj_iso", "egm_lj_iso")},
+    "SR_4mu": {"hist": "mulj_mulj_iso", "axes": ("mu_lj0_iso", "mu_lj1_iso")},
+}
+DEFAULT_A_CUT = 0.25
+
+
+def _bin_index(axis, value):
+    """Index of the bin edge at ``value``; raises if it is not on an edge."""
+    edges = axis.edges
+    idx = int(round((value - edges[0]) / (edges[1] - edges[0])))
+    if not (0 <= idx <= axis.size) or abs(edges[idx] - value) > 1e-9:
+        raise ValueError(
+            f"{value} is not on a bin edge of {axis.name} "
+            f"(edges {edges[0]:g}..{edges[-1]:g} step {edges[1]-edges[0]:g})"
+        )
+    return idx
+
+
+def region_yields_from_plane(sample_out, channel, a_cut=DEFAULT_A_CUT, cr_cut=None,
+                             sample_name="", allow_data_sr=False):
+    """ABCD yields re-derived from the 2D isolation plane.
+
+    ``a_cut`` bounds region A on both axes and is meant to stay fixed.
+    ``cr_cut`` is where the control regions start; ``None`` means "same as
+    ``a_cut``", reproducing the standard definition. Setting ``cr_cut > a_cut``
+    leaves an unused buffer band between A and the control regions.
+
+    The closure relation is unaffected by the buffer: if the two isolations
+    factorise then B*C/D still equals A for any ``cr_cut``, because the
+    ``cr_cut`` factors cancel between numerator and denominator.
+
+    Returns ``{region_index: Yield}``; region A is withheld unless the sample is
+    established simulation, exactly as ``region_yields`` does.
+    """
+    cr_cut = a_cut if cr_cut is None else cr_cut
+    if cr_cut < a_cut:
+        raise ValueError(f"cr_cut ({cr_cut}) must be >= a_cut ({a_cut})")
+    spec = ISO_PLANE.get(channel.name if hasattr(channel, "name") else channel)
+    if spec is None:
+        return None
+    h = sample_out["hists"].get(spec["hist"])
+    if h is None or channel.selection not in list(h.axes["channel"]):
+        return None
+
+    sliced = h[{"channel": channel.selection}]
+    view = sliced.view(flow=True)
+    values, variances = view["value"], view["variance"]
+    ax0, ax1 = sliced.axes[0], sliced.axes[1]
+    a0, a1 = _bin_index(ax0, a_cut), _bin_index(ax1, a_cut)
+    c0, c1 = _bin_index(ax0, cr_cut), _bin_index(ax1, cr_cut)
+
+    # Index 0 is underflow and index size+1 is overflow, so in-range bin i sits
+    # at index i+1. The underflow is kept on the LOW side: a few signal events
+    # carry a sentinel isolation below the axis range, and the abcd_region axis
+    # counts them as isolated. Dropping them loses up to 2.6% of the signal in
+    # the worst point.
+    low0, low1 = slice(0, a0 + 1), slice(0, a1 + 1)
+    high0, high1 = slice(c0 + 1, ax0.size + 2), slice(c1 + 1, ax1.size + 2)
+    quadrants = {
+        0: (low0, low1),    # A: both isolated
+        1: (high0, low1),   # B
+        2: (low0, high1),   # C
+        3: (high0, high1),  # D
+    }
+
+    blind_sr = not allow_data_sr and not is_simulation(sample_name, sample_out)
+    out = {}
+    for region, (s0, s1) in quadrants.items():
+        if region == SR_ABCD_REGION and blind_sr:
+            continue
+        out[region] = Yield(float(values[s0, s1].sum()),
+                            float(variances[s0, s1].sum()))
+    return out
+
+
+def collect_plane_yields(directory, channels=None, a_cut=DEFAULT_A_CUT, cr_cut=None,
+                         progress=None, allow_data_sr=False):
+    """``collect_yields`` equivalent, but re-deriving regions from the iso plane."""
+    channels = channels or CHANNELS
+    files = sorted(Path(directory).glob("*.coffea"))
+    if not files:
+        raise FileNotFoundError(f"no .coffea files under {directory}")
+    out = {}
+    for i, path in enumerate(files):
+        if progress is not None:
+            progress(i, len(files), path.name)
+        for sample, sample_out in read_coffea(path).items():
+            per_channel = {}
+            for ch_name, channel in channels.items():
+                y = region_yields_from_plane(sample_out, channel, a_cut, cr_cut,
+                                             sample_name=sample,
+                                             allow_data_sr=allow_data_sr)
+                if y is not None:
+                    per_channel[ch_name] = y
+            out[sample] = per_channel
+    return out
